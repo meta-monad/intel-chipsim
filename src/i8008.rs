@@ -127,6 +127,10 @@ impl I8008 {
         self.register_b
     }
 
+    pub fn get_instruction_register(&self) -> u8 {
+        self.instruction_register
+    }
+
     pub fn select_flag(&self, c4: bool, c5: bool) -> bool {
         match (c4, c5) {
             (false, false) => self.flag_carry,
@@ -254,22 +258,24 @@ impl I8008 {
         match self.state_internal {
             CpuStateI::T1 => {
                 let pc: u16 = self.get_program_counter();
-                if !self.line_interrupt {
-                    if (pc & 0x00FF) == 0xFF {
-                        self.flag_carry = true;
-                    }
-                    self.set_program_counter(pc + 1);
-                } else {
-                    self.line_interrupt = false;
-                }
 
                 if self.cycle == CpuCycle::PCR && (
                     compare_instruction_mask(self.instruction_register, I8008Ins::LrM as u8, I8008Ins::LrM.mask() ) ||
                     compare_instruction_mask(self.instruction_register, I8008Ins::LMr as u8, I8008Ins::LMr.mask() )
                     ) {
-                    self.databus = self.scratchpad_l;
+                    self.databus = reverse_u8(self.scratchpad_l);
                 } else {
-                    self.databus = (pc & 0x00FF ) as u8; // send out 8 lower bits
+                    self.databus = reverse_u8((self.get_program_counter() & 0x00FF ) as u8); // send out 8 lower bits
+                }
+
+                if !self.line_interrupt {
+                    if (pc & 0x00FF) == 0xFF {
+                        self.flag_carry = true;
+                    }
+                    println!("[DEBUG]: incremented pc by 1");
+                    self.set_program_counter(pc + 1);
+                } else {
+                    self.line_interrupt = false;
                 }
                 self.state_internal = CpuStateI::T2;
                 self.state_external = CpuState::T2;
@@ -279,9 +285,9 @@ impl I8008 {
                     compare_instruction_mask(self.instruction_register, I8008Ins::LrM as u8, I8008Ins::LrM.mask() ) ||
                     compare_instruction_mask(self.instruction_register, I8008Ins::LMr as u8, I8008Ins::LMr.mask() )
                     ) {
-                    self.databus = self.scratchpad_h;
+                    self.databus = reverse_u8(self.scratchpad_h);
                 } else {
-                    self.databus = (self.get_program_counter() & 0x3F00 ) as u8; // send out 6 higher bits
+                    self.databus = reverse_u8((self.get_program_counter() & 0x3F00 ) as u8); // send out 6 higher bits
                 }
                 self.state_internal = CpuStateI::T3;
                 self.state_external = CpuState::T3;
@@ -472,7 +478,7 @@ pub fn reverse_u8(data: u8) -> u8 {
 }
 
 #[inline(always)]
-fn u14_to_u16(address: u16) -> u16 {
+pub fn u14_to_u16(address: u16) -> u16 {
     ((address & 0x8000) >> 15) + // D7
     ((address & 0x4000) >> 13) + // D6
     ((address & 0x2000) >> 11) + // D5

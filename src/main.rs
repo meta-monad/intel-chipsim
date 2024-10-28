@@ -17,13 +17,15 @@ macro_rules! equiv_select {
 fn main() {
     let mut cpu_sim: I8008 = I8008::new();
     let mut mem_controller: I8008MemoryController = I8008MemoryController::new();
-    // TODO: populate memory
 
     let mut address_low: u8 = 0x00;
     let mut address_high: u8 = 0x00;
+    // populating the memory
     mem_controller.load_into(
         0x00,
         &[
+            I8008Ins::Lrr as u8 | 0x00, // Laa == NOP -- this is read in twice, first for the
+                                        // interrupt, second as the read after the interrupt
             I8008Ins::INr as u8 | 0x08, // INb
             I8008Ins::DCr as u8 | 0x18, // INd
             I8008Ins::Lrr as u8 | 0x1C, // Lde
@@ -44,6 +46,7 @@ fn main() {
             }
             CpuState::T3 => {
                 let address: u16 = (address_low as u16) + ((address_high as u16) << 8);
+                println!("[DEBUG]: read in address {:#06X}, providing {:#04X}", u14_to_u16(address), mem_controller.get_value(address));
                 cpu_sim.databus = mem_controller.get_value(address);
             }
             _ => (),
@@ -82,28 +85,50 @@ fn main() {
                 Some(val) => cpu_sim.databus = reverse_u8(val.parse::<u8>().unwrap()),
                 None => panic!("error: expected an argument"),
             },
+            Some("ram") => {
+                let width = 2;
+                for (i, elem) in mem_controller.memory.iter_mut().enumerate() {
+                    match elem {
+                        0x00 => {
+                            println!("0x00 ...");
+                            break;
+                        },
+                        byte => {
+                            if i%width == width - 1 {
+                                println!("{:#04X}", byte);
+                            } else if i%width == 0 {
+                                print!("{:#06X}: {:#04X} ", i, byte);
+                            } else {
+                                print!("{:#04X} ", byte);
+                                let _ = io::stdout().flush();
+                            }
+                        },
+                    }
+                }
+            }
             Some("status") => {
                 let sp: u8 = cpu_sim.get_stack_pointer();
                 println!("stack:    scratchpad:  internal:");
                 println!(
-                    "A|{:#04X}{} A|{:#04X}       {:#04X}",
+                    "A|{:#04X}{} A|{:#04X}       A|{:#04X}",
                     cpu_sim.get_stack_register(0),
                     equiv_select!(sp, 0),
                     cpu_sim.get_scratchpad_register(false, false, false),
                     cpu_sim.get_register_a()
                 );
                 println!(
-                    "B|{:#04X}{} B|{:#04X}       {:#04X}",
+                    "B|{:#04X}{} B|{:#04X}       B|{:#04X}",
                     cpu_sim.get_stack_register(1),
                     equiv_select!(sp, 1),
                     cpu_sim.get_scratchpad_register(false, false, true),
                     cpu_sim.get_register_b()
                 );
                 println!(
-                    "C|{:#04X}{} C|{:#04X}",
+                    "C|{:#04X}{} C|{:#04X}      IR|{:#04X} ",
                     cpu_sim.get_stack_register(2),
                     equiv_select!(sp, 2),
-                    cpu_sim.get_scratchpad_register(false, true, false)
+                    cpu_sim.get_scratchpad_register(false, true, false),
+                    cpu_sim.get_instruction_register()
                 );
                 println!(
                     "D|{:#04X}{} D|{:#04X}",
@@ -166,7 +191,7 @@ fn main() {
             Some("all") => println!("{:#?}", cpu_sim),
             Some("quit") => break,
             Some(&_) => {
-                panic!("error: unknown command supplied");
+                println!("error: unknown command supplied");
             }
             None => (),
         }
