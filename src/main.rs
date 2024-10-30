@@ -18,8 +18,7 @@ fn main() {
     let mut cpu_sim: I8008 = I8008::new();
     let mut mem_controller: I8008MemoryController = I8008MemoryController::new();
 
-    let mut address_low: u8 = 0x00;
-    let mut address_high: u8 = 0x00;
+    let mut address_store: u16 = 0x0000;
     // populating the memory
     mem_controller.load_into(
         0x00,
@@ -27,43 +26,28 @@ fn main() {
             I8008Ins::Lrr as u8 | 0x00, // Laa == NOP -- this is read in twice, first for the
                                         // interrupt, second as the read after the interrupt
             I8008Ins::INr as u8 | 0x08, // INb
-            I8008Ins::DCr as u8 | 0x18, // INd
+            I8008Ins::DCr as u8 | 0x18, // DCd
             I8008Ins::Lrr as u8 | 0x1C, // Lde
         ],
     );
     loop {
-        print!(">");
+        print!("> ");
         let _ = io::stdout().flush();
         let mut input = String::new();
         io::stdin().read_line(&mut input).unwrap();
         input = input.trim().to_string();
-        match cpu_sim.get_state() {
-            CpuState::T1 => {
-                address_low = cpu_sim.databus;
-            }
-            CpuState::T2 => {
-                address_high = cpu_sim.databus;
-            }
-            CpuState::T3 => {
-                let address: u16 = (address_low as u16) + ((address_high as u16) << 8);
-                println!("[DEBUG]: read in address {:#06X}, providing {:#04X}", u14_to_u16(address), mem_controller.get_value(address));
-                cpu_sim.databus = mem_controller.get_value(address);
-            }
-            _ => (),
-        }
         let mut words = input.split(" ");
+
         match words.next() {
             Some("state") => {
                 println!("state: {:?}", cpu_sim.get_state());
             }
             Some("step") => {
-                cpu_sim.step();
+                let s: CpuState = *cpu_sim.get_state();
+                step_with_mem(&mut cpu_sim, &mut mem_controller, &mut address_store, s);
             }
-            Some("address") => match input.split(" ").nth(1) {
-                Some("low") => println!("{:#04X}", address_low),
-                Some("high") => println!("{:#04X}", address_high),
-                Some(&_) => panic!("error: unrecognized argument"),
-                None => panic!("error: expected an argument"),
+            Some("address") => {
+                println!("{:#06X}", address_store);
             },
             Some("set_line") => {
                 let value: bool = match words.nth(2) {
@@ -82,7 +66,7 @@ fn main() {
                 }
             }
             Some("databus") => match words.nth(1) {
-                Some(val) => cpu_sim.databus = reverse_u8(val.parse::<u8>().unwrap()),
+                Some(val) => cpu_sim.databus = val.parse::<u8>().unwrap().reverse_bits(),
                 None => panic!("error: expected an argument"),
             },
             Some("ram") => {
@@ -189,7 +173,7 @@ fn main() {
                 println!("interrupt line: {}", cpu_sim.line_interrupt);
             }
             Some("all") => println!("{:#?}", cpu_sim),
-            Some("quit") => break,
+            Some("quit") | Some("") => break,
             Some(&_) => {
                 println!("error: unknown command supplied");
             }
