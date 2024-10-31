@@ -24,12 +24,14 @@ fn main() {
         0x00,
         &[
             I8008Ins::Lrr as u8 | 0x00, // Laa == NOP -- this is read in twice, first for the
-                                        // interrupt, second as the read after the interrupt
+            // interrupt, second as the read after the interrupt
             I8008Ins::INr as u8 | 0x08, // INb
             I8008Ins::DCr as u8 | 0x18, // DCd
-            I8008Ins::Lrr as u8 | 0x1C, // Lde
+            I8008Ins::Lrr as u8 | 0x23, // Led
+            I8008Ins::LrM as u8 | 0x10, // LcM
         ],
     );
+    // 0xC0, 0x08, 0x19, 0xE3, 0xD7
     loop {
         print!("> ");
         let _ = io::stdout().flush();
@@ -46,9 +48,17 @@ fn main() {
                 let s: CpuState = *cpu_sim.get_state();
                 step_with_mem(&mut cpu_sim, &mut mem_controller, &mut address_store, s);
             }
+            Some("cycle") => {
+                let mut s: CpuState = *cpu_sim.get_state();
+                while s != CpuState::T1 && s != CpuState::STOPPED {
+                    println!("[DEBUG] running a cycle on {:?}", s);
+                    step_with_mem(&mut cpu_sim, &mut mem_controller, &mut address_store, s);
+                    s = *cpu_sim.get_state();
+                }
+            }
             Some("address") => {
                 println!("{:#06X}", address_store);
-            },
+            }
             Some("set_line") => {
                 let value: bool = match words.nth(2) {
                     Some("1") => true,
@@ -76,17 +86,17 @@ fn main() {
                         0x00 => {
                             println!("0x00 ...");
                             break;
-                        },
+                        }
                         byte => {
-                            if i%width == width - 1 {
+                            if i % width == width - 1 {
                                 println!("{:#04X}", byte);
-                            } else if i%width == 0 {
+                            } else if i % width == 0 {
                                 print!("{:#06X}: {:#04X} ", i, byte);
                             } else {
                                 print!("{:#04X} ", byte);
                                 let _ = io::stdout().flush();
                             }
-                        },
+                        }
                     }
                 }
             }
