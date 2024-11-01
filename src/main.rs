@@ -1,5 +1,7 @@
 mod i8008;
+mod utils;
 use i8008::*;
+use utils::*;
 
 use std::io;
 use std::io::Write;
@@ -16,19 +18,19 @@ macro_rules! equiv_select {
 
 fn main() {
     let mut cpu_sim: I8008 = I8008::new();
-    let mut mem_controller: I8008MemoryController = I8008MemoryController::new();
+    let mut mem_controller: MemoryController = MemoryController::new();
 
     let mut address_store: u16 = 0x0000;
     // populating the memory
+    // first instruction is read in twice in this case
     mem_controller.load_into(
         0x00,
         &[
-            I8008Ins::Lrr as u8 | 0x00, // Laa == NOP -- this is read in twice, first for the
-            // interrupt, second as the read after the interrupt
-            I8008Ins::INr as u8 | 0x08, // INb
-            I8008Ins::DCr as u8 | 0x18, // DCd
-            I8008Ins::Lrr as u8 | 0x23, // Led
-            I8008Ins::LrM as u8 | 0x10, // LcM
+            I8008Ins::Lrr as u8 | 0x00, // Laa - 0xC0 
+            I8008Ins::INr as u8 | 0x08, // INb - 0x08
+            I8008Ins::DCr as u8 | 0x18, // DCd - 0x19
+            I8008Ins::Lrr as u8 | 0x23, // Led - 0xE3
+            I8008Ins::LrM as u8 | 0x10, // LcM - 0xD7
         ],
     );
     // 0xC0, 0x08, 0x19, 0xE3, 0xD7
