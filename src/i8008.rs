@@ -43,19 +43,23 @@ pub struct I8008 {
 }
 
 #[derive(Debug)]
+#[repr(u8)]
 pub enum I8008Ins {
     // HLT = 0x00, // avoid enum conflict
-    LrM = 0xC7,
-    LMr = 0xCF,
+    LrM = 0xC7, // does not apply to M
+    LMr = 0xF8, // does not apply to M
     Lrr = 0xC0, // does not apply to M
     LrI = 0x06,
     LMI = 0x3E,
     INr = 0x00, // doesn't apply to A or M
     DCr = 0x01,
+    AOM = 0x87,
+    AOr = 0x80,
 }
 
 #[derive(Debug)]
-enum AluOp {
+#[repr(u8)]
+pub enum AluOp {
     // 4th, 5th, and 6th bits from the left
     AD = 0x00, // ADD
     AC = 0x08, // ADD with carry
@@ -79,6 +83,8 @@ impl I8008Ins {
             I8008Ins::LMI => 0xFF,
             I8008Ins::INr => 0xC7,
             I8008Ins::DCr => 0xC7,
+            I8008Ins::AOM => 0xC7,
+            I8008Ins::AOr => 0xC0,
         }
     }
 }
@@ -110,6 +116,20 @@ pub enum CpuCycle {
     PCR, // cycle 2/3 - data reading
     PCW, // cycle 2/3 - data writing
     PCC, // cycle 2/3 - I/O operations
+}
+
+impl TryFrom<u8> for AluOp {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        if value & 0x38 != value {
+            Err(())
+        } else {
+            Ok(unsafe {
+                std::mem::transmute::<u8, AluOp>(value)
+            })
+        }
+    }
 }
 
 impl I8008 {
@@ -257,11 +277,37 @@ impl I8008 {
         }
     }
 
-    fn alu(&mut self, operation: AluOp) {
-        // TODO
+    fn alu(&mut self, operation: AluOp, value: u8) {
         match operation {
-            _ => (),
-        };
+            AluOp::AD => self.scratchpad_a += value,
+            AluOp::AC => self.scratchpad_a += value + match self.flag_carry {
+                true => 1,
+                false => 0,
+            },
+            AluOp::SU => self.scratchpad_a -= value,
+            AluOp::SB => self.scratchpad_a  -= value - match self.flag_carry {
+                true => 1,
+                false => 0,
+            },
+            AluOp::ND => self.scratchpad_a &= value,
+            AluOp::XR => self.scratchpad_a ^= value,
+            AluOp::OR => self.scratchpad_a |= value,
+            AluOp::CP => {
+                let delta: i16 = self.scratchpad_a as i16 - value as i16;
+                println!("[DEBUG] produced delta {}", delta);
+                if delta == 0 {
+                    self.flag_zero = true;
+                } else {
+                    self.flag_zero = false;
+                }
+
+                if delta < 0 { // A < value
+                    self.flag_carry = true;
+                } else {
+                    self.flag_carry = false;
+                }
+            },
+        }
     }
 
     fn set_flags(&mut self, result: u8) {
@@ -348,8 +394,15 @@ impl I8008 {
                         self.register_b = self.instruction_register; // & (!I8008Ins::INr.mask());
                         t5 = true; // idle in t4
                     } else if compare_instruction_mask(self.instruction_register, I8008Ins::DCr as u8, I8008Ins::DCr.mask() ) {
-                        self.register_b = self.instruction_register & (!I8008Ins::DCr.mask());
+                        self.register_b = self.instruction_register & (!I8008Ins::DCr.mask()); // TODO: why?
                         t5 = true; // idle in t4
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOM as u8, I8008Ins::AOM.mask()) {
+                        self.register_b = self.instruction_register;
+                        self.cycle = CpuCycle::PCR;
+                        t1 = true;
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOr as u8, I8008Ins::AOr.mask()) {
+                        self.register_b = self.instruction_register;
+                        t4 = true;
                     }
     
                     if t5 {
@@ -367,9 +420,14 @@ impl I8008 {
                     let mut t5: bool = false;
                     let mut t1: bool = false;
                     if compare_instruction_mask(self.instruction_register, I8008Ins::LMr as u8, I8008Ins::LMr.mask() ) {
-                        self.register_b = self.instruction_register & (!I8008Ins::LMr.mask());
+                        let register_selector = self.instruction_register & (!I8008Ins::LMr.mask());
+                        self.register_b = self.get_scratchpad_register(
+                            (register_selector & 0x04) >> 2 != 0,
+                            (register_selector & 0x02) >> 1 != 0,
+                            (register_selector & 0x01) >> 0 != 0,
+                        );
+                        self.cycle = CpuCycle::PCW;
                         t1 = true;
-                        self.cycle = CpuCycle::PCR;
                     } else if compare_instruction_mask(self.instruction_register, I8008Ins::Lrr as u8, I8008Ins::Lrr.mask() ) {
                         let register_selector: u8 = self.instruction_register & 0x07;
                         self.register_b = self.get_scratchpad_register(
@@ -378,6 +436,14 @@ impl I8008 {
                             (register_selector & 0x01) >> 0 != 0,
                         );
     
+                        t5 = true;
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOr as u8, I8008Ins::AOr.mask()) {
+                        let register_selector: u8 = self.instruction_register & 0x07;
+                        self.register_b = self.get_scratchpad_register(
+                            (register_selector & 0x04) >> 2 != 0,
+                            (register_selector & 0x02) >> 1 != 0,
+                            (register_selector & 0x01) >> 0 != 0,
+                        );
                         t5 = true;
                     }
     
@@ -458,21 +524,25 @@ impl I8008 {
                             (register_selector & 0x10) >> 4 != 0,
                             (register_selector & 0x08) >> 3 != 0,
                         );
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOr as u8, I8008Ins::AOr.mask()) {
+                        let operation_selector: u8 = self.instruction_register & 0x38;
+                        self.alu(AluOp::try_from(operation_selector).unwrap(), self.register_b);
                     }
+
                     self.state_internal = CpuStateI::T1;
                     self.state_external = CpuState::T1;
                 }
             },
             CpuCycle::PCR => match self.state_internal {
                 CpuStateI::T1 => {
-                    if compare_instruction_mask(self.instruction_register, I8008Ins::LrM as u8, I8008Ins::LrM.mask() ) || compare_instruction_mask(self.instruction_register, I8008Ins::LMr as u8, I8008Ins::LMr.mask() ) {
+                    if compare_instruction_mask(self.instruction_register, I8008Ins::LrM as u8, I8008Ins::LrM.mask() ) {
                         self.databus = self.scratchpad_l.reverse_bits();
                     }
                     self.state_internal = CpuStateI::T2;
                     self.state_external = CpuState::T2;
                 }
                 CpuStateI::T2 => {
-                    if compare_instruction_mask(self.instruction_register, I8008Ins::LrM as u8, I8008Ins::LrM.mask() ) || compare_instruction_mask(self.instruction_register, I8008Ins::LMr as u8, I8008Ins::LMr.mask() ) {
+                    if compare_instruction_mask(self.instruction_register, I8008Ins::LrM as u8, I8008Ins::LrM.mask() ) {
                         self.databus = self.scratchpad_h.reverse_bits();
                     }
                     self.state_internal = CpuStateI::T3;
@@ -484,12 +554,6 @@ impl I8008 {
 
                         self.state_internal = CpuStateI::T5;
                         self.state_external = CpuState::T5;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LMr as u8, I8008Ins::LMr.mask() ) {
-                        self.databus = self.register_b;
-
-                        self.cycle = CpuCycle::PCI;
-                        self.state_internal = CpuStateI::T1;
-                        self.state_external = CpuState::T1;
                     }
                 }
                 CpuStateI::T4 => {}
@@ -506,6 +570,33 @@ impl I8008 {
                     self.state_internal = CpuStateI::T1;
                     self.state_external = CpuState::T1;
                 }
+            },
+            CpuCycle::PCW => match self.state_internal {
+                CpuStateI::T1 => {
+                    if compare_instruction_mask(self.instruction_register, I8008Ins::LMr as u8, I8008Ins::LMr.mask() ) {
+                        self.databus = self.scratchpad_l.reverse_bits();
+                    }
+                    self.state_internal = CpuStateI::T2;
+                    self.state_external = CpuState::T2;
+                },
+                CpuStateI::T2 => {
+                    if compare_instruction_mask(self.instruction_register, I8008Ins::LMr as u8, I8008Ins::LMr.mask() ) {
+                        self.databus = self.scratchpad_h.reverse_bits();
+                    }
+                    self.state_internal = CpuStateI::T3;
+                    self.state_external = CpuState::T3;
+                },
+                CpuStateI::T3 => {
+                    if compare_instruction_mask(self.instruction_register, I8008Ins::LMr as u8, I8008Ins::LMr.mask() ) {
+                        self.databus = self.register_b;
+
+                        self.cycle = CpuCycle::PCI;
+                        self.state_internal = CpuStateI::T1;
+                        self.state_external = CpuState::T1;
+                    }
+                },
+                CpuStateI::T4 => {},
+                CpuStateI::T5 => {},
             },
             _ => (),
         };
@@ -527,14 +618,22 @@ pub fn step_with_mem(
             chip.step();
             *address_reg = (*address_reg & 0x00FF) + ((chip.databus as u16) << 8);
         }
-        CpuState::T3 => {
-            println!(
-                "[DEBUG] read in address {:#06X}, providing {:#04X}",
-                u14_to_u16(*address_reg),
-                memory.get_value(*address_reg)
-            );
-            chip.databus = memory.get_value(*address_reg);
-            chip.step();
+        CpuState::T3 => match chip.get_cycle() {
+            CpuCycle::PCI | CpuCycle::PCR => {
+                println!(
+                    "[DEBUG] read in address {:#06X}, providing {:#04X}",
+                    u14_to_u16(*address_reg),
+                    memory.get_value(*address_reg)
+                );
+                chip.databus = memory.get_value(*address_reg);
+                chip.step();
+            },
+            CpuCycle::PCW => {
+                println!("[DEBUG] read in address {:#06X}, setting new value", u14_to_u16(*address_reg));
+                chip.step();
+                memory.memory[u14_to_u16(*address_reg) as usize] = chip.databus;
+            },
+            _ => ()
         }
         _ => chip.step(),
     }

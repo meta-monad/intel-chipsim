@@ -31,6 +31,9 @@ fn main() {
             I8008Ins::DCr as u8 | 0x18, // DCd - 0x19
             I8008Ins::Lrr as u8 | 0x23, // Led - 0xE3
             I8008Ins::LrM as u8 | 0x10, // LcM - 0xD7
+            I8008Ins::LMr as u8 | 0x03, // LMd - 0xFB 
+            I8008Ins::AOr as u8 | AluOp::OR as u8 | 0x01, // ADDb - 0xB1
+            I8008Ins::AOr as u8 | AluOp::SU as u8 | 0x01, // SUBb - 0x91
         ],
     );
     // 0xC0, 0x08, 0x19, 0xE3, 0xD7
