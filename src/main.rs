@@ -34,6 +34,7 @@ fn main() {
             I8008Ins::LMr as u8 | 0x03, // LMd - 0xFB 
             I8008Ins::AOr as u8 | AluOp::OR as u8 | 0x01, // ADDb - 0xB1
             I8008Ins::AOr as u8 | AluOp::SU as u8 | 0x01, // SUBb - 0x91
+            I8008Ins::AOM as u8 | AluOp::SU as u8, // SUBM - 0x97
         ],
     );
     // 0xC0, 0x08, 0x19, 0xE3, 0xD7
@@ -55,11 +56,12 @@ fn main() {
             }
             Some("cycle") => {
                 let mut s: CpuState = *cpu_sim.get_state();
-                while s != CpuState::T1 && s != CpuState::STOPPED {
+                while {
                     println!("[DEBUG] running a cycle on {:?}", s);
                     step_with_mem(&mut cpu_sim, &mut mem_controller, &mut address_store, s);
                     s = *cpu_sim.get_state();
-                }
+                    s != CpuState::T1 && s != CpuState::STOPPED
+                } {}
             }
             Some("address") => {
                 println!("{:#06X}", address_store);

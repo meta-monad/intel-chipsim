@@ -121,6 +121,7 @@ pub enum CpuCycle {
 impl TryFrom<u8> for AluOp {
     type Error = ();
 
+    // we check if the bitpattern is correct, if it is so, we transmute safely into the enum
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         if value & 0x38 != value {
             Err(())
@@ -276,19 +277,45 @@ impl I8008 {
             stack_pointer: 0, // initally points to the first element of the stack
         }
     }
+    fn clear_flags(&mut self) {
+        self.flag_carry = false;
+        self.flag_zero = false;
+        self.flag_sign = false;
+        self.flag_parity = false;
+    }
 
     fn alu(&mut self, operation: AluOp, value: u8) {
+        let carry_bit: u8 = match self.flag_carry {
+            true => 1,
+            false => 0,
+        };
         match operation {
-            AluOp::AD => self.scratchpad_a += value,
-            AluOp::AC => self.scratchpad_a += value + match self.flag_carry {
-                true => 1,
-                false => 0,
-            },
-            AluOp::SU => self.scratchpad_a -= value,
-            AluOp::SB => self.scratchpad_a  -= value - match self.flag_carry {
-                true => 1,
-                false => 0,
-            },
+            AluOp::AD => {
+                self.flag_carry = self.scratchpad_a.overflowing_add(value).1;
+                self.scratchpad_a = self.scratchpad_a.wrapping_add(value);
+            }
+            AluOp::AC => {
+                if value == 0xFF {
+                    self.flag_carry = true; // 0xFF + 1 overflows once, but overflowing_add ignores it
+                    // skip adding 0x100
+                } else {
+                    self.flag_carry = self.scratchpad_a.overflowing_add(value+1).1;
+                    self.scratchpad_a = self.scratchpad_a.wrapping_add(value + carry_bit);
+                };
+            }
+            AluOp::SU => {
+                self.flag_carry = self.scratchpad_a.overflowing_sub(value).1;
+                self.scratchpad_a = self.scratchpad_a.wrapping_sub(value);
+            }
+            AluOp::SB => {
+                if value == 0xFF {
+                    self.flag_carry = true;
+                    // skip adding 0x100
+                } else {
+                    self.flag_carry = self.scratchpad_a.overflowing_sub(value - carry_bit).1;
+                    self.scratchpad_a = self.scratchpad_a.wrapping_sub(value - carry_bit);
+                }
+            }
             AluOp::ND => self.scratchpad_a &= value,
             AluOp::XR => self.scratchpad_a ^= value,
             AluOp::OR => self.scratchpad_a |= value,
@@ -526,7 +553,12 @@ impl I8008 {
                         );
                     } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOr as u8, I8008Ins::AOr.mask()) {
                         let operation_selector: u8 = self.instruction_register & 0x38;
-                        self.alu(AluOp::try_from(operation_selector).unwrap(), self.register_b);
+                        self.clear_flags();
+
+                        self.alu(AluOp::try_from(operation_selector).unwrap(), self.register_b); // sets CARRY flag
+                        if operation_selector != 0x38 { // 0x38 == 00111000 == compare sets ZERO flag
+                            self.set_flags(self.register_a); // set rest of the flags
+                        }
                     }
 
                     self.state_internal = CpuStateI::T1;
@@ -537,12 +569,16 @@ impl I8008 {
                 CpuStateI::T1 => {
                     if compare_instruction_mask(self.instruction_register, I8008Ins::LrM as u8, I8008Ins::LrM.mask() ) {
                         self.databus = self.scratchpad_l.reverse_bits();
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOM as u8, I8008Ins::AOM.mask() ) {
+                        self.databus = self.scratchpad_l.reverse_bits();
                     }
                     self.state_internal = CpuStateI::T2;
                     self.state_external = CpuState::T2;
                 }
                 CpuStateI::T2 => {
                     if compare_instruction_mask(self.instruction_register, I8008Ins::LrM as u8, I8008Ins::LrM.mask() ) {
+                        self.databus = self.scratchpad_h.reverse_bits();
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOM as u8, I8008Ins::AOM.mask() ) {
                         self.databus = self.scratchpad_h.reverse_bits();
                     }
                     self.state_internal = CpuStateI::T3;
@@ -552,9 +588,11 @@ impl I8008 {
                     if compare_instruction_mask(self.instruction_register, I8008Ins::LrM as u8, I8008Ins::LrM.mask() ) {
                         self.register_b = self.databus;
 
-                        self.state_internal = CpuStateI::T5;
-                        self.state_external = CpuState::T5;
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOM as u8, I8008Ins::AOM.mask() ) {
+                        self.register_b = self.databus;
                     }
+                    self.state_internal = CpuStateI::T5;
+                    self.state_external = CpuState::T5;
                 }
                 CpuStateI::T4 => {}
                 CpuStateI::T5 => {
@@ -565,6 +603,16 @@ impl I8008 {
                             (register_selector & 0x10) >> 4 != 0, 
                             (register_selector & 0x08) >> 3 != 0
                         );
+                        self.cycle = CpuCycle::PCI;
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOM as u8, I8008Ins::AOM.mask() ) {
+                        let operation_selector: u8 = self.instruction_register & 0x38;
+                        self.clear_flags();
+
+                        self.alu(AluOp::try_from(operation_selector).unwrap(), self.register_b); // sets CARRY flag
+                        if operation_selector != 0x38 { // 0x38 == 00111000 == compare sets ZERO flag
+                            self.set_flags(self.register_a); // set rest of the flags
+                        }
+
                         self.cycle = CpuCycle::PCI;
                     }
                     self.state_internal = CpuStateI::T1;
