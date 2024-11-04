@@ -242,10 +242,10 @@ pub fn run_command(command: Command, cpu_sim: &mut I8008, mem_controller: &mut M
         Command::Cycle => {
             let mut s: CpuState = *cpu_sim.get_state();
             while {
-                println!("[DEBUG] running a cycle on {:?}", s);
+                println!("[DEBUG] running on cycle {:?}, state {:?} ", *cpu_sim.get_cycle(), s);
                 step_with_mem(cpu_sim, mem_controller, address_store, s);
                 s = *cpu_sim.get_state();
-                s != CpuState::T1 && s != CpuState::STOPPED
+                s != CpuState::T1 && s != CpuState::STOPPED && s != CpuState::WAIT
             } {}
         },
         Command::Address => println!("{:#06X}", address_store),
@@ -256,7 +256,7 @@ pub fn run_command(command: Command, cpu_sim: &mut I8008, mem_controller: &mut M
         Command::FullState => println!("{:#?}", cpu_sim),
         Command::Help => {
             println!("state: display the CPU's state, as indicated by the S0, S1, and S2 pins");
-            println!("status: print out an overview of the CPU including all its registers, flags, address stack, pin lines, databus, cycle, and internal state");
+            println!("status: print out an overview of the CPU including all its registers, flags,\n\taddress stack, pin lines, databus, cycle, and internal state");
             println!("ram: display the contents of the RAM in hexadecimal");
             println!("step: make the chip process its current state");
             println!("cycle: make the chip process an entire cycle ending on the next T1");

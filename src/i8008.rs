@@ -49,12 +49,13 @@ pub enum I8008Ins {
     LrM = 0xC7, // does not apply to M
     LMr = 0xF8, // does not apply to M
     Lrr = 0xC0, // does not apply to M
-    LrI = 0x06,
+    LrI = 0x06, // does not apply to M
     LMI = 0x3E,
-    INr = 0x00, // doesn't apply to A or M
-    DCr = 0x01,
+    INr = 0x00, // does not apply to A or M
+    DCr = 0x01, // does not apply to A or M
     AOM = 0x87,
     AOr = 0x80,
+    AOI = 0x04,
 }
 
 #[derive(Debug)]
@@ -85,6 +86,7 @@ impl I8008Ins {
             I8008Ins::DCr => 0xC7,
             I8008Ins::AOM => 0xC7,
             I8008Ins::AOr => 0xC0,
+            I8008Ins::AOI => 0xC7,
         }
     }
 }
@@ -285,6 +287,7 @@ impl I8008 {
     }
 
     fn alu(&mut self, operation: AluOp, value: u8) {
+        println!("DEBUG ALU OP '{:?}' on value {:#04X}", operation, value);
         let carry_bit: u8 = match self.flag_carry {
             true => 1,
             false => 0,
@@ -389,11 +392,18 @@ impl I8008 {
                     self.state_internal = CpuStateI::T3;
                     self.state_external = CpuState::T3;
                 }
-                CpuStateI::T3 => {
+                CpuStateI::T3 => 'block: {
                     self.instruction_register = self.databus;
                     let mut t1: bool = false;
                     let mut t4: bool = false;
                     let mut t5: bool = false;
+
+                    if !self.line_ready {
+                        self.state_external = CpuState::WAIT;
+                        break 'block 
+                    } else {
+                        self.state_external = CpuState::T3;
+                    }
     
                     // order matters!
                     if self.instruction_register == 0xFF || self.instruction_register == 0x00 {
@@ -430,6 +440,12 @@ impl I8008 {
                     } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOr as u8, I8008Ins::AOr.mask()) {
                         self.register_b = self.instruction_register;
                         t4 = true;
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOI as u8, I8008Ins::AOI.mask()) {
+                        self.register_b = self.instruction_register;
+                        self.cycle = CpuCycle::PCR;
+                        t1 = true;
+                    } else {
+                        panic!("error: reached unimplemented instruction {:#04X} in cycle PCI state T3", self.instruction_register)
                     }
     
                     if t5 {
@@ -492,6 +508,7 @@ impl I8008 {
                         );
                     } else if compare_instruction_mask(self.instruction_register, I8008Ins::INr as u8, I8008Ins::INr.mask() ) {
                         let register_selector = self.instruction_register & (!I8008Ins::INr.mask());
+
     
                         // we borrow register a for this
                         self.register_a = self.get_scratchpad_register(
@@ -506,6 +523,7 @@ impl I8008 {
                             self.register_a += 1;
                         }
     
+                        self.clear_flags();
                         if self.register_a == 0x00 {
                             // 0xFF++ = 0x00 + carry
                             self.flag_carry = true;
@@ -521,7 +539,8 @@ impl I8008 {
                             (register_selector & 0x08) >> 3 != 0,
                         );
                     } else if compare_instruction_mask(self.instruction_register, I8008Ins::DCr as u8, I8008Ins::DCr.mask() ) {
-                        let register_selector = self.instruction_register & (!I8008Ins::INr.mask());
+                        let register_selector = self.instruction_register & (!I8008Ins::DCr.mask());
+
     
                         // we borrow register a for this
                         self.register_a = self.get_scratchpad_register(
@@ -536,6 +555,7 @@ impl I8008 {
                             self.register_a -= 1;
                         }
     
+                        self.clear_flags();
                         if self.register_a == 0xFF {
                             self.flag_carry = true; // 0x00-- = 0xFF with carry
                         } else {
@@ -571,6 +591,19 @@ impl I8008 {
                         self.databus = self.scratchpad_l.reverse_bits();
                     } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOM as u8, I8008Ins::AOM.mask() ) {
                         self.databus = self.scratchpad_l.reverse_bits();
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LMI as u8, I8008Ins::LMI.mask() ) || 
+                              compare_instruction_mask(self.instruction_register, I8008Ins::LrI as u8, I8008Ins::LrI.mask() ) ||
+                              compare_instruction_mask(self.instruction_register, I8008Ins::AOI as u8, I8008Ins::AOI.mask() )
+                    {
+                        let pc: u16 = self.get_program_counter();
+    
+                        self.databus = ((self.get_program_counter() & 0x00FF) as u8).reverse_bits();
+                        // send out 8 lower bits
+        
+                        if (pc & 0x00FF) == 0xFF {
+                            self.flag_carry = true;
+                        }
+                        self.set_program_counter(pc + 1);
                     }
                     self.state_internal = CpuStateI::T2;
                     self.state_external = CpuState::T2;
@@ -580,19 +613,45 @@ impl I8008 {
                         self.databus = self.scratchpad_h.reverse_bits();
                     } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOM as u8, I8008Ins::AOM.mask() ) {
                         self.databus = self.scratchpad_h.reverse_bits();
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LMI as u8, I8008Ins::LMI.mask() ) {
+                        self.databus = (((self.get_program_counter() & 0x3F00) >> 8) as u8).reverse_bits();
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LrI as u8, I8008Ins::LrI.mask() ) {
+                        self.databus = (((self.get_program_counter() & 0x3F00) >> 8) as u8).reverse_bits();
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOI as u8, I8008Ins::AOI.mask() ) {
+                        self.databus = (((self.get_program_counter() & 0x3F00) >> 8) as u8).reverse_bits();
                     }
                     self.state_internal = CpuStateI::T3;
                     self.state_external = CpuState::T3;
                 }
                 CpuStateI::T3 => {
+                    let mut t1: bool = false;
+                    let mut t5: bool = false;
                     if compare_instruction_mask(self.instruction_register, I8008Ins::LrM as u8, I8008Ins::LrM.mask() ) {
                         self.register_b = self.databus;
-
+                        t5 = true;
                     } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOM as u8, I8008Ins::AOM.mask() ) {
                         self.register_b = self.databus;
+                        t5 = true;
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LMI as u8, I8008Ins::LMI.mask() ) { 
+                        self.register_b = self.databus;
+                        t1 = true;
+                        self.cycle = CpuCycle::PCW;
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LrI as u8, I8008Ins::LrI.mask() ) { 
+                        self.register_b = self.databus;
+                        t5 = true;
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOI as u8, I8008Ins::AOI.mask() ) { 
+                        self.register_b = self.databus;
+                        t5 = true;
+                    } else {
+                        panic!("error: reached unimplemented instruction {:#04X} in cycle PCR state T3", self.instruction_register)
                     }
-                    self.state_internal = CpuStateI::T5;
-                    self.state_external = CpuState::T5;
+                    if t5 {
+                        self.state_internal = CpuStateI::T5;
+                        self.state_external = CpuState::T5;
+                    } else if t1 {
+                        self.state_internal = CpuStateI::T1;
+                        self.state_external = CpuState::T1;
+                    }
                 }
                 CpuStateI::T4 => {}
                 CpuStateI::T5 => {
@@ -603,7 +662,6 @@ impl I8008 {
                             (register_selector & 0x10) >> 4 != 0, 
                             (register_selector & 0x08) >> 3 != 0
                         );
-                        self.cycle = CpuCycle::PCI;
                     } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOM as u8, I8008Ins::AOM.mask() ) {
                         let operation_selector: u8 = self.instruction_register & 0x38;
                         self.clear_flags();
@@ -612,9 +670,24 @@ impl I8008 {
                         if operation_selector != 0x38 { // 0x38 == 00111000 == compare sets ZERO flag
                             self.set_flags(self.register_a); // set rest of the flags
                         }
-
-                        self.cycle = CpuCycle::PCI;
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LrI as u8, I8008Ins::LrI.mask() ) { 
+                        // shouldn't get here with LMI
+                        let register_selector = self.instruction_register & 0x38; 
+                        self.set_scratchpad_register(self.register_b,
+                            (register_selector & 0x20) >> 5 != 0,
+                            (register_selector & 0x10) >> 4 != 0, 
+                            (register_selector & 0x08) >> 3 != 0
+                        );
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOI as u8, I8008Ins::AOI.mask() ) {
+                        let operation_selector: u8 = self.instruction_register & 0x38;
+                        self.clear_flags();
+                        self.alu(AluOp::try_from(operation_selector).unwrap(), self.register_b); // sets CARRY flag
+                        if operation_selector != 0x38 { // 0x38 == 00111000 == compare sets ZERO flag
+                            self.set_flags(self.register_a); // set rest of the flags
+                        }
                     }
+
+                    self.cycle = CpuCycle::PCI;
                     self.state_internal = CpuStateI::T1;
                     self.state_external = CpuState::T1;
                 }
@@ -623,6 +696,8 @@ impl I8008 {
                 CpuStateI::T1 => {
                     if compare_instruction_mask(self.instruction_register, I8008Ins::LMr as u8, I8008Ins::LMr.mask() ) {
                         self.databus = self.scratchpad_l.reverse_bits();
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LMI as u8, I8008Ins::LMI.mask() ) {
+                        self.databus = self.scratchpad_l.reverse_bits();
                     }
                     self.state_internal = CpuStateI::T2;
                     self.state_external = CpuState::T2;
@@ -630,15 +705,27 @@ impl I8008 {
                 CpuStateI::T2 => {
                     if compare_instruction_mask(self.instruction_register, I8008Ins::LMr as u8, I8008Ins::LMr.mask() ) {
                         self.databus = self.scratchpad_h.reverse_bits();
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LMI as u8, I8008Ins::LMI.mask() ) {
+                        self.databus = self.scratchpad_h.reverse_bits();
                     }
                     self.state_internal = CpuStateI::T3;
                     self.state_external = CpuState::T3;
                 },
                 CpuStateI::T3 => {
+                    let mut t1: bool = false;
                     if compare_instruction_mask(self.instruction_register, I8008Ins::LMr as u8, I8008Ins::LMr.mask() ) {
                         self.databus = self.register_b;
 
+                        t1 = true;
                         self.cycle = CpuCycle::PCI;
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LMI as u8, I8008Ins::LMI.mask() ) {
+                        self.databus = self.register_b;
+
+                        t1 = true;
+                        self.cycle = CpuCycle::PCI;
+                    }
+
+                    if t1 {
                         self.state_internal = CpuStateI::T1;
                         self.state_external = CpuState::T1;
                     }
