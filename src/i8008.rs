@@ -56,6 +56,10 @@ pub enum I8008Ins {
     AOM = 0x87,
     AOr = 0x80,
     AOI = 0x04,
+    RLC = 0x02,
+    RRC = 0x0A,
+    RAL = 0x12,
+    RAR = 0x1A,
 }
 
 #[derive(Debug)]
@@ -87,6 +91,10 @@ impl I8008Ins {
             I8008Ins::AOM => 0xC7,
             I8008Ins::AOr => 0xC0,
             I8008Ins::AOI => 0xC7,
+            I8008Ins::RLC => 0xFF,
+            I8008Ins::RRC => 0xFF,
+            I8008Ins::RAL => 0xFF,
+            I8008Ins::RAR => 0xFF,
         }
     }
 }
@@ -394,6 +402,8 @@ impl I8008 {
                 }
                 CpuStateI::T3 => 'block: {
                     self.instruction_register = self.databus;
+                    self.register_b = self.instruction_register;
+
                     let mut t1: bool = false;
                     let mut t4: bool = false;
                     let mut t5: bool = false;
@@ -406,7 +416,9 @@ impl I8008 {
                     }
     
                     // order matters!
-                    if self.instruction_register == 0xFF || self.instruction_register == 0x00 {
+                    // HLT = 11 111 111
+                    //     = 00 000 00X - hence the mask with 0xFE
+                    if self.instruction_register == 0xFF || self.instruction_register & 0xFE == 0x00 {
                         // filter out overlapping cases of HLT instructions
                         if self.line_interrupt {
                             self.state_internal = CpuStateI::T1;
@@ -428,22 +440,26 @@ impl I8008 {
                         self.cycle = CpuCycle::PCR;
                         t1 = true;
                     } else if compare_instruction_mask(self.instruction_register, I8008Ins::INr as u8, I8008Ins::INr.mask() ) {
-                        self.register_b = self.instruction_register; // & (!I8008Ins::INr.mask());
                         t5 = true; // idle in t4
                     } else if compare_instruction_mask(self.instruction_register, I8008Ins::DCr as u8, I8008Ins::DCr.mask() ) {
-                        self.register_b = self.instruction_register & (!I8008Ins::DCr.mask()); // TODO: why?
                         t5 = true; // idle in t4
                     } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOM as u8, I8008Ins::AOM.mask()) {
-                        self.register_b = self.instruction_register;
                         self.cycle = CpuCycle::PCR;
                         t1 = true;
                     } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOr as u8, I8008Ins::AOr.mask()) {
                         self.register_b = self.instruction_register;
                         t4 = true;
                     } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOI as u8, I8008Ins::AOI.mask()) {
-                        self.register_b = self.instruction_register;
                         self.cycle = CpuCycle::PCR;
                         t1 = true;
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RLC as u8, I8008Ins::RLC.mask()) {
+                        t5 = true;
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RRC as u8, I8008Ins::RRC.mask()) {
+                        t5 = true;
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RAL as u8, I8008Ins::RAL.mask()) {
+                        t5 = true;
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RAR as u8, I8008Ins::RAR.mask()) {
+                        t5 = true;
                     } else {
                         panic!("error: reached unimplemented instruction {:#04X} in cycle PCI state T3", self.instruction_register)
                     }
@@ -579,6 +595,38 @@ impl I8008 {
                         if operation_selector != 0x38 { // 0x38 == 00111000 == compare sets ZERO flag
                             self.set_flags(self.register_a); // set rest of the flags
                         }
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RLC as u8, I8008Ins::RLC.mask()) {
+                        if self.scratchpad_a & 0x80 == 0x80 {
+                            self.flag_carry = true;
+                        } else {
+                            self.flag_carry = false;
+                        }
+                        self.scratchpad_a = self.scratchpad_a.rotate_left(1);
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RRC as u8, I8008Ins::RRC.mask()) {
+                        if self.scratchpad_a & 0x01 == 0x01 {
+                            self.flag_carry = true;
+                        } else {
+                            self.flag_carry = false;
+                        }
+                        self.scratchpad_a = self.scratchpad_a.rotate_right(1);
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RAL as u8, I8008Ins::RAL.mask()) {
+                        let carry_t: bool = if self.scratchpad_a & 0x80 == 0x80 {
+                            true
+                        } else {
+                            false
+                        };
+                        self.scratchpad_a <<= 1;
+                        self.scratchpad_a |= self.flag_carry as u8;
+                        self.flag_carry = carry_t;
+                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RAR as u8, I8008Ins::RAR.mask()) {
+                        let carry_t: bool = if self.scratchpad_a & 0x01 == 0x01 {
+                            true
+                        } else {
+                            false
+                        };
+                        self.scratchpad_a >>= 1;
+                        self.scratchpad_a |= (self.flag_carry as u8) << 7;
+                        self.flag_carry = carry_t;
                     }
 
                     self.state_internal = CpuStateI::T1;
@@ -774,18 +822,6 @@ pub fn step_with_mem(
     }
 }
 
-pub fn into_state(s0: bool, s1: bool, s2: bool) -> CpuState {
-    match (s0, s1, s2) {
-        (false, false, false) => CpuState::WAIT,  // 000
-        (false, false, true) => CpuState::T2,     // 001
-        (false, true, false) => CpuState::T1,     // 010
-        (false, true, true) => CpuState::T1I,     // 011
-        (true, false, false) => CpuState::T3,     // 100
-        (true, false, true) => CpuState::T5,      // 101
-        (true, true, false) => CpuState::STOPPED, // 110
-        (true, true, true) => CpuState::T4,       // 111
-    }
-}
 
 #[inline(always)]
 pub fn u14_to_u16(address: u16) -> u16 {
