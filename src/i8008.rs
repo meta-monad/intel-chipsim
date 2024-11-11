@@ -319,7 +319,7 @@ impl I8008 {
     }
 
     fn alu(&mut self, operation: AluOp, value: u8) {
-        println!("DEBUG ALU OP '{:?}' on value {:#04X}", operation, value);
+        println!("[DEBUG] ALU OP '{:?}' on value {:#04X}", operation, value);
         let carry_bit: u8 = match self.flag_carry {
             true => 1,
             false => 0,
@@ -809,6 +809,7 @@ impl I8008 {
                             false => {
                                 self.register_b = self.databus;
                                 t1 = true;
+                                self.read_control_bit = true;
                             },
                             true => {
                                 self.register_a = self.databus;
@@ -880,8 +881,8 @@ impl I8008 {
                     {
                         self.set_program_counter((self.register_a as u16) << 8);
                     }
-                    self.state_internal = CpuStateI::T1;
-                    self.state_external = CpuState::T1;
+                    self.state_internal = CpuStateI::T5;
+                    self.state_external = CpuState::T5;
                 }
                 CpuStateI::T5 => {
                     if compare_instruction_mask(self.instruction_register, I8008Ins::LrM as u8, I8008Ins::LrM.mask() ) {

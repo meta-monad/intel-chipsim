@@ -1,6 +1,8 @@
 use std::io;
 use std::process;
-use std::io::Write;
+use std::fs::File;
+use std::io::{Read, Write};
+use std::path::PathBuf;
 
 use crate::i8008::*;
 use crate::utils::*;
@@ -53,6 +55,7 @@ pub enum Command {
     FullState,
     Quit,
     Help,
+    Load(PathBuf),
 }
 
 pub enum Line {
@@ -117,10 +120,20 @@ pub fn parse_command(input: String) -> Result<Command, ParseError> {
         Some("set_line") => {
             let line: Line = parse_line(input_words.next())?;
             let (line, value) = parse_line_value(input_words.next(), line)?;
-            Ok(Command::SetLine(line, value))
+            match input_words.next() {
+                None => Ok(Command::SetLine(line, value)),
+                Some(a) => Err(ParseError::UnexpectedArg(a.to_string())),
+            }
         }, 
         Some("quit") | Some("exit") => end_of_args_parser(input_words.next(), Command::Quit),
         Some("help") => end_of_args_parser(input_words.next(), Command::Help),
+        Some("load") => {
+            let file: PathBuf = input_words.next().ok_or(ParseError::MissingArg(vec!["FILE"]))?.into();
+            match input_words.next() {
+                None => Ok(Command::Load(file)),
+                Some(a) => Err(ParseError::UnexpectedArg(a.to_string())),
+            }
+        }
         Some("") | None  => Ok(Command::Empty),
         Some(c) => Err(ParseError::UnknownCommand(c.to_string())),
     }
@@ -213,7 +226,7 @@ pub fn run_command(command: Command, cpu_sim: &mut I8008, mem_controller: &mut M
             println!("interrupt line: {}", cpu_sim.line_interrupt);
         }
         Command::Ram => {
-             let width = 2;
+            let width = 8;
             for (i, elem) in mem_controller.memory.iter_mut().enumerate() {
                 match elem {
                     0x00 => {
@@ -252,6 +265,21 @@ pub fn run_command(command: Command, cpu_sim: &mut I8008, mem_controller: &mut M
             Line::Ready => cpu_sim.line_ready = value,
         },
         Command::FullState => println!("{:#?}", cpu_sim),
+        Command::Load(path) => {
+            let mut f = File::open(path).expect("error: unable to open file");
+            // read in bytecode
+            let mut bytecode = Vec::new();
+            let bytes_read = f.read_to_end(&mut bytecode).expect("error: unable to read file");
+            println!("[DEBUG] read in {} bytes", bytes_read);
+
+            // load bytecode into memory
+            if bytecode.len() > mem_controller.memory.len() {
+                println!("error: failed loading into memory, file too large");
+            } else {
+                mem_controller.load_into(0, &bytecode);
+            }
+            
+        }
         Command::Help => {
             println!("state: display the CPU's state, as indicated by the S0, S1, and S2 pins");
             println!("status: print out an overview of the CPU including all its registers, flags,\n\taddress stack, pin lines, databus, cycle, and internal state");

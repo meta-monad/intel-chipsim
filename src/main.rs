@@ -38,6 +38,7 @@ fn run_i8008() {
     let mut address_store: u16 = 0x0000;
     // populating the memory
     // first instruction is read in twice in this case
+    /*
     mem_controller.load_into(
         0x00,
         &[
@@ -60,6 +61,7 @@ fn run_i8008() {
             I8008Ins::RET as u8,
         ],
     );
+    */
     loop {
         print!("> ");
         let _ = io::stdout().flush();
