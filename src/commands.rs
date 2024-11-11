@@ -1,8 +1,8 @@
-use std::io;
-use std::process;
 use std::fs::File;
+use std::io;
 use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::process;
 
 use crate::i8008::*;
 use crate::utils::*;
@@ -34,7 +34,6 @@ macro_rules! gen_commands {
     }
 }
 */
-
 
 pub enum ParseError {
     UnknownCommand(String),
@@ -68,8 +67,12 @@ impl std::fmt::Display for ParseError {
         match self {
             ParseError::UnknownCommand(c) => write!(f, "unknown command '{}'", c),
             ParseError::UnexpectedArg(a) => write!(f, "unexpected argument '{}'", a),
-            ParseError::MissingArg(va) => write!(f, "missing argument, expected one of {}", va.join(", ")),
-            ParseError::BadArg(a, va) => write!(f, "bad argument '{}', expected one of {}", a, va.join(", ")),
+            ParseError::MissingArg(va) => {
+                write!(f, "missing argument, expected one of {}", va.join(", "))
+            }
+            ParseError::BadArg(a, va) => {
+                write!(f, "bad argument '{}', expected one of {}", a, va.join(", "))
+            }
         }
     }
 }
@@ -77,7 +80,7 @@ impl std::fmt::Display for ParseError {
 fn end_of_args_parser(token: Option<&str>, command: Command) -> Result<Command, ParseError> {
     match token {
         Some(a) => Err(ParseError::UnexpectedArg(a.to_string())),
-        None => Ok(command) 
+        None => Ok(command),
     }
 }
 
@@ -101,7 +104,7 @@ fn parse_line_value(token: Option<&str>, line: Line) -> Result<(Line, bool), Par
         Some("low") => Ok((line, false)),
         Some("0") => Ok((line, false)),
         Some(a) => Err(ParseError::BadArg(a.to_string(), valid_tokens)),
-        None => Err(ParseError::MissingArg(valid_tokens))
+        None => Err(ParseError::MissingArg(valid_tokens)),
     }
 }
 
@@ -110,7 +113,7 @@ pub fn parse_command(input: String) -> Result<Command, ParseError> {
     let input_t = input.trim().to_string();
     let mut input_words: std::str::Split<'_, char> = input_t.split(' ');
     match input_words.next() {
-        Some("state") => end_of_args_parser(input_words.next(), Command::State), 
+        Some("state") => end_of_args_parser(input_words.next(), Command::State),
         Some("status") => end_of_args_parser(input_words.next(), Command::Status),
         Some("full_debug") => end_of_args_parser(input_words.next(), Command::FullState),
         Some("ram") => end_of_args_parser(input_words.next(), Command::Ram),
@@ -124,22 +127,30 @@ pub fn parse_command(input: String) -> Result<Command, ParseError> {
                 None => Ok(Command::SetLine(line, value)),
                 Some(a) => Err(ParseError::UnexpectedArg(a.to_string())),
             }
-        }, 
+        }
         Some("quit") | Some("exit") => end_of_args_parser(input_words.next(), Command::Quit),
         Some("help") => end_of_args_parser(input_words.next(), Command::Help),
         Some("load") => {
-            let file: PathBuf = input_words.next().ok_or(ParseError::MissingArg(vec!["FILE"]))?.into();
+            let file: PathBuf = input_words
+                .next()
+                .ok_or(ParseError::MissingArg(vec!["FILE"]))?
+                .into();
             match input_words.next() {
                 None => Ok(Command::Load(file)),
                 Some(a) => Err(ParseError::UnexpectedArg(a.to_string())),
             }
         }
-        Some("") | None  => Ok(Command::Empty),
+        Some("") | None => Ok(Command::Empty),
         Some(c) => Err(ParseError::UnknownCommand(c.to_string())),
     }
 }
 
-pub fn run_command(command: Command, cpu_sim: &mut I8008, mem_controller: &mut MemoryController, address_store: &mut u16) {
+pub fn run_command(
+    command: Command,
+    cpu_sim: &mut I8008,
+    mem_controller: &mut MemoryController,
+    address_store: &mut u16,
+) {
     match command {
         Command::Empty => (),
         Command::State => println!("state: {:?}", cpu_sim.get_state()),
@@ -245,20 +256,24 @@ pub fn run_command(command: Command, cpu_sim: &mut I8008, mem_controller: &mut M
                     }
                 }
             }
-        },
+        }
         Command::Step => {
             let s: CpuState = *cpu_sim.get_state();
             step_with_mem(cpu_sim, mem_controller, address_store, s);
-        },
+        }
         Command::Cycle => {
             let mut s: CpuState = *cpu_sim.get_state();
             while {
-                println!("[DEBUG] running on cycle {:?}, state {:?} ", *cpu_sim.get_cycle(), s);
+                println!(
+                    "[DEBUG] running on cycle {:?}, state {:?} ",
+                    *cpu_sim.get_cycle(),
+                    s
+                );
                 step_with_mem(cpu_sim, mem_controller, address_store, s);
                 s = *cpu_sim.get_state();
                 s != CpuState::T1 && s != CpuState::STOPPED && s != CpuState::WAIT
             } {}
-        },
+        }
         Command::Address => println!("{:#06X}", address_store),
         Command::SetLine(line, value) => match line {
             Line::Interrupt => cpu_sim.line_interrupt = value,
@@ -269,7 +284,9 @@ pub fn run_command(command: Command, cpu_sim: &mut I8008, mem_controller: &mut M
             let mut f = File::open(path).expect("error: unable to open file");
             // read in bytecode
             let mut bytecode = Vec::new();
-            let bytes_read = f.read_to_end(&mut bytecode).expect("error: unable to read file");
+            let bytes_read = f
+                .read_to_end(&mut bytecode)
+                .expect("error: unable to read file");
             println!("[DEBUG] read in {} bytes", bytes_read);
 
             // load bytecode into memory
@@ -278,7 +295,6 @@ pub fn run_command(command: Command, cpu_sim: &mut I8008, mem_controller: &mut M
             } else {
                 mem_controller.load_into(0, &bytecode);
             }
-            
         }
         Command::Help => {
             println!("state: display the CPU's state, as indicated by the S0, S1, and S2 pins");
@@ -291,8 +307,7 @@ pub fn run_command(command: Command, cpu_sim: &mut I8008, mem_controller: &mut M
             println!("full_state: RESERVED FOR DEBUGGING, prints out full debug formatting of the internal I8008 struct");
             println!("quit: quit the program");
             println!("help: displays this message");
-        },
+        }
         Command::Quit => process::exit(0),
-
     }
 }

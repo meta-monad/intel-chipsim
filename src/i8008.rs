@@ -159,9 +159,7 @@ impl TryFrom<u8> for AluOp {
         if value & 0x38 != value {
             Err(())
         } else {
-            Ok(unsafe {
-                std::mem::transmute::<u8, AluOp>(value)
-            })
+            Ok(unsafe { std::mem::transmute::<u8, AluOp>(value) })
         }
     }
 }
@@ -332,9 +330,9 @@ impl I8008 {
             AluOp::AC => {
                 if value == 0xFF {
                     self.flag_carry = true; // 0xFF + 1 overflows once, but overflowing_add ignores it
-                    // skip adding 0x100
+                                            // skip adding 0x100
                 } else {
-                    self.flag_carry = self.scratchpad_a.overflowing_add(value+1).1;
+                    self.flag_carry = self.scratchpad_a.overflowing_add(value + 1).1;
                     self.scratchpad_a = self.scratchpad_a.wrapping_add(value + carry_bit);
                 };
             }
@@ -363,12 +361,13 @@ impl I8008 {
                     self.flag_zero = false;
                 }
 
-                if delta < 0 { // A < value
+                if delta < 0 {
+                    // A < value
                     self.flag_carry = true;
                 } else {
                     self.flag_carry = false;
                 }
-            },
+            }
         }
     }
 
@@ -431,10 +430,10 @@ impl I8008 {
             CpuCycle::PCI => match self.state_internal {
                 CpuStateI::T1 => {
                     let pc: u16 = self.get_program_counter();
-    
+
                     self.databus = ((self.get_program_counter() & 0x00FF) as u8).reverse_bits();
                     // send out 8 lower bits
-    
+
                     if !self.line_interrupt {
                         if (pc & 0x00FF) == 0xFF {
                             self.flag_carry = true;
@@ -447,18 +446,23 @@ impl I8008 {
                     self.state_external = CpuState::T2;
                 }
                 CpuStateI::T2 => {
-                    self.databus = (((self.get_program_counter() & 0x3F00) >> 8) as u8).reverse_bits(); // send out 6 higher bits
+                    self.databus =
+                        (((self.get_program_counter() & 0x3F00) >> 8) as u8).reverse_bits(); // send out 6 higher bits
                     self.state_internal = CpuStateI::T3;
                     self.state_external = CpuState::T3;
                 }
                 CpuStateI::T3 => 'block: {
-                    if compare_instruction_mask(self.databus, I8008Ins::RST as u8, I8008Ins::RST.mask() ) {
+                    if compare_instruction_mask(
+                        self.databus,
+                        I8008Ins::RST as u8,
+                        I8008Ins::RST.mask(),
+                    ) {
                         self.register_b = self.databus;
                         self.register_a = 0x00;
                         self.push_stack();
                         self.state_external = CpuState::T4;
                         self.state_internal = CpuStateI::T4;
-                        break 'block
+                        break 'block;
                     };
 
                     self.instruction_register = self.databus;
@@ -470,15 +474,16 @@ impl I8008 {
 
                     if !self.line_ready {
                         self.state_external = CpuState::WAIT;
-                        break 'block 
+                        break 'block;
                     } else {
                         self.state_external = CpuState::T3;
                     }
-    
+
                     // order matters!
                     // HLT = 11 111 111
                     //     = 00 000 00X - hence the mask with 0xFE
-                    if self.instruction_register == 0xFF || self.instruction_register & 0xFE == 0x00 {
+                    if self.instruction_register == 0xFF || self.instruction_register & 0xFE == 0x00
+                    {
                         // filter out overlapping cases of HLT instructions
                         if self.line_interrupt {
                             self.state_internal = CpuStateI::T1;
@@ -486,64 +491,150 @@ impl I8008 {
                         } else {
                             self.state_external = CpuState::STOPPED;
                         }
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LrM as u8, I8008Ins::LrM.mask() ) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LrM as u8,
+                        I8008Ins::LrM.mask(),
+                    ) {
                         self.cycle = CpuCycle::PCR;
                         t1 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LMr as u8, I8008Ins::LMr.mask() ) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LMr as u8,
+                        I8008Ins::LMr.mask(),
+                    ) {
                         t4 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::Lrr as u8, I8008Ins::Lrr.mask() ) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::Lrr as u8,
+                        I8008Ins::Lrr.mask(),
+                    ) {
                         t4 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LMI as u8, I8008Ins::LMI.mask() ) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LMI as u8,
+                        I8008Ins::LMI.mask(),
+                    ) {
                         self.cycle = CpuCycle::PCR;
                         t1 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LrI as u8, I8008Ins::LrI.mask() ) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LrI as u8,
+                        I8008Ins::LrI.mask(),
+                    ) {
                         self.cycle = CpuCycle::PCR;
                         t1 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::INr as u8, I8008Ins::INr.mask() ) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::INr as u8,
+                        I8008Ins::INr.mask(),
+                    ) {
                         t5 = true; // idle in t4
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::DCr as u8, I8008Ins::DCr.mask() ) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::DCr as u8,
+                        I8008Ins::DCr.mask(),
+                    ) {
                         t5 = true; // idle in t4
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOM as u8, I8008Ins::AOM.mask()) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::AOM as u8,
+                        I8008Ins::AOM.mask(),
+                    ) {
                         self.cycle = CpuCycle::PCR;
                         t1 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOr as u8, I8008Ins::AOr.mask()) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::AOr as u8,
+                        I8008Ins::AOr.mask(),
+                    ) {
                         self.register_b = self.instruction_register;
                         t4 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOI as u8, I8008Ins::AOI.mask()) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::AOI as u8,
+                        I8008Ins::AOI.mask(),
+                    ) {
                         self.cycle = CpuCycle::PCR;
                         t1 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RLC as u8, I8008Ins::RLC.mask()) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::RLC as u8,
+                        I8008Ins::RLC.mask(),
+                    ) {
                         t5 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RRC as u8, I8008Ins::RRC.mask()) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::RRC as u8,
+                        I8008Ins::RRC.mask(),
+                    ) {
                         t5 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RAL as u8, I8008Ins::RAL.mask()) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::RAL as u8,
+                        I8008Ins::RAL.mask(),
+                    ) {
                         t5 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RAR as u8, I8008Ins::RAR.mask()) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::RAR as u8,
+                        I8008Ins::RAR.mask(),
+                    ) {
                         t5 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::JMP as u8, I8008Ins::JMP.mask()) 
-                        || compare_instruction_mask(self.instruction_register, I8008Ins::JFc as u8, I8008Ins::JFc.mask())
-                        || compare_instruction_mask(self.instruction_register, I8008Ins::JTc as u8, I8008Ins::JTc.mask())
-                    {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::JMP as u8,
+                        I8008Ins::JMP.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::JFc as u8,
+                        I8008Ins::JFc.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::JTc as u8,
+                        I8008Ins::JTc.mask(),
+                    ) {
                         self.cycle = CpuCycle::PCR;
                         self.read_control_bit = false;
                         t1 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::CAL as u8, I8008Ins::CAL.mask()) 
-                        || compare_instruction_mask(self.instruction_register, I8008Ins::CFc as u8, I8008Ins::CFc.mask()) 
-                        || compare_instruction_mask(self.instruction_register, I8008Ins::CTc as u8, I8008Ins::CTc.mask())
-                    {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::CAL as u8,
+                        I8008Ins::CAL.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::CFc as u8,
+                        I8008Ins::CFc.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::CTc as u8,
+                        I8008Ins::CTc.mask(),
+                    ) {
                         self.cycle = CpuCycle::PCR;
                         self.read_control_bit = false;
                         t1 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RET as u8, I8008Ins::RET.mask()) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::RET as u8,
+                        I8008Ins::RET.mask(),
+                    ) {
                         t4 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RFc as u8, I8008Ins::RFc.mask()) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::RFc as u8,
+                        I8008Ins::RFc.mask(),
+                    ) {
                         t4 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RTc as u8, I8008Ins::RTc.mask()) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::RTc as u8,
+                        I8008Ins::RTc.mask(),
+                    ) {
                         t4 = true;
                     } else {
                         panic!("error: reached unimplemented instruction {:#04X} in cycle PCI state T3", self.instruction_register)
                     }
-    
+
                     if t5 {
                         self.state_internal = CpuStateI::T5;
                         self.state_external = CpuState::T5;
@@ -558,7 +649,11 @@ impl I8008 {
                 CpuStateI::T4 => {
                     let mut t5: bool = false;
                     let mut t1: bool = false;
-                    if compare_instruction_mask(self.instruction_register, I8008Ins::LMr as u8, I8008Ins::LMr.mask() ) {
+                    if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LMr as u8,
+                        I8008Ins::LMr.mask(),
+                    ) {
                         let register_selector = self.instruction_register & (!I8008Ins::LMr.mask());
                         self.register_b = self.get_scratchpad_register(
                             (register_selector & 0x04) >> 2 != 0,
@@ -567,16 +662,24 @@ impl I8008 {
                         );
                         self.cycle = CpuCycle::PCW;
                         t1 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::Lrr as u8, I8008Ins::Lrr.mask() ) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::Lrr as u8,
+                        I8008Ins::Lrr.mask(),
+                    ) {
                         let register_selector: u8 = self.instruction_register & 0x07;
                         self.register_b = self.get_scratchpad_register(
                             (register_selector & 0x04) >> 2 != 0,
                             (register_selector & 0x02) >> 1 != 0,
                             (register_selector & 0x01) >> 0 != 0,
                         );
-    
+
                         t5 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOr as u8, I8008Ins::AOr.mask()) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::AOr as u8,
+                        I8008Ins::AOr.mask(),
+                    ) {
                         let register_selector: u8 = self.instruction_register & 0x07;
                         self.register_b = self.get_scratchpad_register(
                             (register_selector & 0x04) >> 2 != 0,
@@ -584,26 +687,44 @@ impl I8008 {
                             (register_selector & 0x01) >> 0 != 0,
                         );
                         t5 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RET as u8, I8008Ins::RET.mask()) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::RET as u8,
+                        I8008Ins::RET.mask(),
+                    ) {
                         self.pop_stack();
                         t1 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RFc as u8, I8008Ins::RFc.mask()) {
-                        if ! (self.check_condition(self.instruction_register & 0x18)) { // select flag bits
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::RFc as u8,
+                        I8008Ins::RFc.mask(),
+                    ) {
+                        if !(self.check_condition(self.instruction_register & 0x18)) {
+                            // select flag bits
                             self.pop_stack();
                         } else {
                         }
                         t1 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RTc as u8, I8008Ins::RTc.mask()) {
-                        if self.check_condition(self.instruction_register & 0x18) { // select flag bits
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::RTc as u8,
+                        I8008Ins::RTc.mask(),
+                    ) {
+                        if self.check_condition(self.instruction_register & 0x18) {
+                            // select flag bits
                             self.pop_stack();
                         } else {
                         }
                         t1 = true;
-                    } else if compare_instruction_mask(self.register_b, I8008Ins::RST as u8, I8008Ins::RST.mask()) {
+                    } else if compare_instruction_mask(
+                        self.register_b,
+                        I8008Ins::RST as u8,
+                        I8008Ins::RST.mask(),
+                    ) {
                         self.set_program_counter((self.register_a as u16) << 8);
                         t5 = true;
                     }
-    
+
                     if t5 {
                         self.state_internal = CpuStateI::T5;
                         self.state_external = CpuState::T5;
@@ -613,30 +734,38 @@ impl I8008 {
                     }
                 }
                 CpuStateI::T5 => {
-                    if compare_instruction_mask(self.instruction_register, I8008Ins::Lrr as u8, I8008Ins::Lrr.mask() ) {
-                        let register_selector = self.instruction_register & 0x38; 
-                        self.set_scratchpad_register(self.register_b,
+                    if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::Lrr as u8,
+                        I8008Ins::Lrr.mask(),
+                    ) {
+                        let register_selector = self.instruction_register & 0x38;
+                        self.set_scratchpad_register(
+                            self.register_b,
                             (register_selector & 0x20) >> 5 != 0,
-                            (register_selector & 0x10) >> 4 != 0, 
-                            (register_selector & 0x08) >> 3 != 0
+                            (register_selector & 0x10) >> 4 != 0,
+                            (register_selector & 0x08) >> 3 != 0,
                         );
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::INr as u8, I8008Ins::INr.mask() ) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::INr as u8,
+                        I8008Ins::INr.mask(),
+                    ) {
                         let register_selector = self.instruction_register & (!I8008Ins::INr.mask());
 
-    
                         // we borrow register a for this
                         self.register_a = self.get_scratchpad_register(
                             (register_selector & 0x20) >> 5 != 0,
                             (register_selector & 0x10) >> 4 != 0,
                             (register_selector & 0x08) >> 3 != 0,
                         );
-    
+
                         if self.register_a == 0xFF {
                             self.register_a = 0x00 // explicit overflow
                         } else {
                             self.register_a += 1;
                         }
-    
+
                         self.clear_flags();
                         if self.register_a == 0x00 {
                             // 0xFF++ = 0x00 + carry
@@ -645,69 +774,91 @@ impl I8008 {
                             self.flag_carry = false;
                         }
                         self.set_flags(self.register_a);
-                        
+
                         self.set_scratchpad_register(
                             self.register_a,
                             (register_selector & 0x20) >> 5 != 0,
                             (register_selector & 0x10) >> 4 != 0,
                             (register_selector & 0x08) >> 3 != 0,
                         );
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::DCr as u8, I8008Ins::DCr.mask() ) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::DCr as u8,
+                        I8008Ins::DCr.mask(),
+                    ) {
                         let register_selector = self.instruction_register & (!I8008Ins::DCr.mask());
 
-    
                         // we borrow register a for this
                         self.register_a = self.get_scratchpad_register(
                             (register_selector & 0x20) >> 5 != 0,
                             (register_selector & 0x10) >> 4 != 0,
                             (register_selector & 0x08) >> 3 != 0,
                         );
-    
+
                         if self.register_a == 0x00 {
                             self.register_a = 0xFF // explicit underflow
                         } else {
                             self.register_a -= 1;
                         }
-    
+
                         self.clear_flags();
                         if self.register_a == 0xFF {
                             self.flag_carry = true; // 0x00-- = 0xFF with carry
                         } else {
                             self.flag_carry = false;
                         }
-    
+
                         self.set_flags(self.register_a);
-                        
-    
+
                         self.set_scratchpad_register(
                             self.register_a,
                             (register_selector & 0x20) >> 5 != 0,
                             (register_selector & 0x10) >> 4 != 0,
                             (register_selector & 0x08) >> 3 != 0,
                         );
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOr as u8, I8008Ins::AOr.mask()) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::AOr as u8,
+                        I8008Ins::AOr.mask(),
+                    ) {
                         let operation_selector: u8 = self.instruction_register & 0x38;
                         self.clear_flags();
 
-                        self.alu(AluOp::try_from(operation_selector).unwrap(), self.register_b); // sets CARRY flag
-                        if operation_selector != 0x38 { // 0x38 == 00111000 == compare sets ZERO flag
+                        self.alu(
+                            AluOp::try_from(operation_selector).unwrap(),
+                            self.register_b,
+                        ); // sets CARRY flag
+                        if operation_selector != 0x38 {
+                            // 0x38 == 00111000 == compare sets ZERO flag
                             self.set_flags(self.register_a); // set rest of the flags
                         }
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RLC as u8, I8008Ins::RLC.mask()) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::RLC as u8,
+                        I8008Ins::RLC.mask(),
+                    ) {
                         if self.scratchpad_a & 0x80 == 0x80 {
                             self.flag_carry = true;
                         } else {
                             self.flag_carry = false;
                         }
                         self.scratchpad_a = self.scratchpad_a.rotate_left(1);
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RRC as u8, I8008Ins::RRC.mask()) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::RRC as u8,
+                        I8008Ins::RRC.mask(),
+                    ) {
                         if self.scratchpad_a & 0x01 == 0x01 {
                             self.flag_carry = true;
                         } else {
                             self.flag_carry = false;
                         }
                         self.scratchpad_a = self.scratchpad_a.rotate_right(1);
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RAL as u8, I8008Ins::RAL.mask()) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::RAL as u8,
+                        I8008Ins::RAL.mask(),
+                    ) {
                         let carry_t: bool = if self.scratchpad_a & 0x80 == 0x80 {
                             true
                         } else {
@@ -716,7 +867,11 @@ impl I8008 {
                         self.scratchpad_a <<= 1;
                         self.scratchpad_a |= self.flag_carry as u8;
                         self.flag_carry = carry_t;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::RAR as u8, I8008Ins::RAR.mask()) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::RAR as u8,
+                        I8008Ins::RAR.mask(),
+                    ) {
                         let carry_t: bool = if self.scratchpad_a & 0x01 == 0x01 {
                             true
                         } else {
@@ -725,7 +880,11 @@ impl I8008 {
                         self.scratchpad_a >>= 1;
                         self.scratchpad_a |= (self.flag_carry as u8) << 7;
                         self.flag_carry = carry_t;
-                    } else if compare_instruction_mask(self.register_b, I8008Ins::RST as u8, I8008Ins::RST.mask()) {
+                    } else if compare_instruction_mask(
+                        self.register_b,
+                        I8008Ins::RST as u8,
+                        I8008Ins::RST.mask(),
+                    ) {
                         self.set_program_counter((self.register_b & !I8008Ins::RST.mask()) as u16);
                     }
 
@@ -735,25 +894,60 @@ impl I8008 {
             },
             CpuCycle::PCR => match self.state_internal {
                 CpuStateI::T1 => {
-                    if compare_instruction_mask(self.instruction_register, I8008Ins::LrM as u8, I8008Ins::LrM.mask() ) {
+                    if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LrM as u8,
+                        I8008Ins::LrM.mask(),
+                    ) {
                         self.databus = self.scratchpad_l.reverse_bits();
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOM as u8, I8008Ins::AOM.mask() ) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::AOM as u8,
+                        I8008Ins::AOM.mask(),
+                    ) {
                         self.databus = self.scratchpad_l.reverse_bits();
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LMI as u8, I8008Ins::LMI.mask() ) || 
-                              compare_instruction_mask(self.instruction_register, I8008Ins::LrI as u8, I8008Ins::LrI.mask() ) ||
-                              compare_instruction_mask(self.instruction_register, I8008Ins::AOI as u8, I8008Ins::AOI.mask() ) ||
-                              compare_instruction_mask(self.instruction_register, I8008Ins::JMP as u8, I8008Ins::JMP.mask() ) ||
-                              compare_instruction_mask(self.instruction_register, I8008Ins::JFc as u8, I8008Ins::JFc.mask() ) ||
-                              compare_instruction_mask(self.instruction_register, I8008Ins::JTc as u8, I8008Ins::JTc.mask() ) ||
-                              compare_instruction_mask(self.instruction_register, I8008Ins::CAL as u8, I8008Ins::CAL.mask() ) ||
-                              compare_instruction_mask(self.instruction_register, I8008Ins::CFc as u8, I8008Ins::CFc.mask() ) ||
-                              compare_instruction_mask(self.instruction_register, I8008Ins::CTc as u8, I8008Ins::CTc.mask() )
-                    {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LMI as u8,
+                        I8008Ins::LMI.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LrI as u8,
+                        I8008Ins::LrI.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::AOI as u8,
+                        I8008Ins::AOI.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::JMP as u8,
+                        I8008Ins::JMP.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::JFc as u8,
+                        I8008Ins::JFc.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::JTc as u8,
+                        I8008Ins::JTc.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::CAL as u8,
+                        I8008Ins::CAL.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::CFc as u8,
+                        I8008Ins::CFc.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::CTc as u8,
+                        I8008Ins::CTc.mask(),
+                    ) {
                         let pc: u16 = self.get_program_counter();
-    
+
                         self.databus = ((self.get_program_counter() & 0x00FF) as u8).reverse_bits();
                         // send out 8 lower bits
-        
+
                         if (pc & 0x00FF) == 0xFF {
                             self.flag_carry = true;
                         }
@@ -763,21 +957,57 @@ impl I8008 {
                     self.state_external = CpuState::T2;
                 }
                 CpuStateI::T2 => {
-                    if compare_instruction_mask(self.instruction_register, I8008Ins::LrM as u8, I8008Ins::LrM.mask() ) {
+                    if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LrM as u8,
+                        I8008Ins::LrM.mask(),
+                    ) {
                         self.databus = self.scratchpad_h.reverse_bits();
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOM as u8, I8008Ins::AOM.mask() ) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::AOM as u8,
+                        I8008Ins::AOM.mask(),
+                    ) {
                         self.databus = self.scratchpad_h.reverse_bits();
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LMI as u8, I8008Ins::LMI.mask() ) ||
-                              compare_instruction_mask(self.instruction_register, I8008Ins::LrI as u8, I8008Ins::LrI.mask() ) ||
-                              compare_instruction_mask(self.instruction_register, I8008Ins::AOI as u8, I8008Ins::AOI.mask() ) ||
-                              compare_instruction_mask(self.instruction_register, I8008Ins::JMP as u8, I8008Ins::JMP.mask() ) ||
-                              compare_instruction_mask(self.instruction_register, I8008Ins::JFc as u8, I8008Ins::JFc.mask() ) ||
-                              compare_instruction_mask(self.instruction_register, I8008Ins::JTc as u8, I8008Ins::JTc.mask() ) ||
-                              compare_instruction_mask(self.instruction_register, I8008Ins::CAL as u8, I8008Ins::CAL.mask() ) ||
-                              compare_instruction_mask(self.instruction_register, I8008Ins::CFc as u8, I8008Ins::CFc.mask() ) ||
-                              compare_instruction_mask(self.instruction_register, I8008Ins::CTc as u8, I8008Ins::CTc.mask() )
-                    {
-                        self.databus = (((self.get_program_counter() & 0x3F00) >> 8) as u8).reverse_bits();
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LMI as u8,
+                        I8008Ins::LMI.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LrI as u8,
+                        I8008Ins::LrI.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::AOI as u8,
+                        I8008Ins::AOI.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::JMP as u8,
+                        I8008Ins::JMP.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::JFc as u8,
+                        I8008Ins::JFc.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::JTc as u8,
+                        I8008Ins::JTc.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::CAL as u8,
+                        I8008Ins::CAL.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::CFc as u8,
+                        I8008Ins::CFc.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::CTc as u8,
+                        I8008Ins::CTc.mask(),
+                    ) {
+                        self.databus =
+                            (((self.get_program_counter() & 0x3F00) >> 8) as u8).reverse_bits();
                     }
                     self.state_internal = CpuStateI::T3;
                     self.state_external = CpuState::T3;
@@ -786,67 +1016,121 @@ impl I8008 {
                     let mut t1: bool = false;
                     let mut t5: bool = false;
                     let mut t4: bool = false;
-                    if compare_instruction_mask(self.instruction_register, I8008Ins::LrM as u8, I8008Ins::LrM.mask() ) {
+                    if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LrM as u8,
+                        I8008Ins::LrM.mask(),
+                    ) {
                         self.register_b = self.databus;
                         t5 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOM as u8, I8008Ins::AOM.mask() ) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::AOM as u8,
+                        I8008Ins::AOM.mask(),
+                    ) {
                         self.register_b = self.databus;
                         t5 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LMI as u8, I8008Ins::LMI.mask() ) { 
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LMI as u8,
+                        I8008Ins::LMI.mask(),
+                    ) {
                         self.register_b = self.databus;
                         t1 = true;
                         self.cycle = CpuCycle::PCW;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LrI as u8, I8008Ins::LrI.mask() ) { 
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LrI as u8,
+                        I8008Ins::LrI.mask(),
+                    ) {
                         self.register_b = self.databus;
                         t5 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOI as u8, I8008Ins::AOI.mask() ) { 
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::AOI as u8,
+                        I8008Ins::AOI.mask(),
+                    ) {
                         self.register_b = self.databus;
                         t5 = true;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::JMP as u8, I8008Ins::JMP.mask() ) ||
-                              compare_instruction_mask(self.instruction_register, I8008Ins::CAL as u8, I8008Ins::CAL.mask() )
-                    {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::JMP as u8,
+                        I8008Ins::JMP.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::CAL as u8,
+                        I8008Ins::CAL.mask(),
+                    ) {
                         match self.read_control_bit {
                             false => {
                                 self.register_b = self.databus;
                                 t1 = true;
                                 self.read_control_bit = true;
-                            },
+                            }
                             true => {
                                 self.register_a = self.databus;
                                 t4 = true;
-                            },
+                            }
                         }
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::JFc as u8, I8008Ins::JFc.mask() ) ||
-                              compare_instruction_mask(self.instruction_register, I8008Ins::JTc as u8, I8008Ins::JTc.mask() ) ||
-                              compare_instruction_mask(self.instruction_register, I8008Ins::CFc as u8, I8008Ins::CFc.mask() ) ||
-                              compare_instruction_mask(self.instruction_register, I8008Ins::CTc as u8, I8008Ins::CTc.mask() )
-                    {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::JFc as u8,
+                        I8008Ins::JFc.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::JTc as u8,
+                        I8008Ins::JTc.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::CFc as u8,
+                        I8008Ins::CFc.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::CTc as u8,
+                        I8008Ins::CTc.mask(),
+                    ) {
                         match self.read_control_bit {
                             false => {
                                 self.register_b = self.databus;
                                 t1 = true;
                                 self.read_control_bit = true;
-                            },
+                            }
                             true => {
                                 // TODO: clean up
-                                if self.check_condition(self.instruction_register & 0x18) &&
-                                   compare_instruction_mask(self.instruction_register, I8008Ins::JTc as u8, I8008Ins::JTc.mask() )
+                                if self.check_condition(self.instruction_register & 0x18)
+                                    && compare_instruction_mask(
+                                        self.instruction_register,
+                                        I8008Ins::JTc as u8,
+                                        I8008Ins::JTc.mask(),
+                                    )
                                 {
                                     self.register_a = self.databus;
                                     t4 = true;
-                                } else if !self.check_condition(self.instruction_register & 0x18) &&
-                                   compare_instruction_mask(self.instruction_register, I8008Ins::JFc as u8, I8008Ins::JFc.mask() )
+                                } else if !self.check_condition(self.instruction_register & 0x18)
+                                    && compare_instruction_mask(
+                                        self.instruction_register,
+                                        I8008Ins::JFc as u8,
+                                        I8008Ins::JFc.mask(),
+                                    )
                                 {
                                     self.register_a = self.databus;
                                     t4 = true;
-                                } else if self.check_condition(self.instruction_register & 0x18) &&
-                                   compare_instruction_mask(self.instruction_register, I8008Ins::CTc as u8, I8008Ins::CTc.mask() )
+                                } else if self.check_condition(self.instruction_register & 0x18)
+                                    && compare_instruction_mask(
+                                        self.instruction_register,
+                                        I8008Ins::CTc as u8,
+                                        I8008Ins::CTc.mask(),
+                                    )
                                 {
                                     self.register_a = self.databus;
                                     self.push_stack();
                                     t4 = true;
-                                } else if !self.check_condition(self.instruction_register & 0x18) &&
-                                   compare_instruction_mask(self.instruction_register, I8008Ins::CFc as u8, I8008Ins::CFc.mask() )
+                                } else if !self.check_condition(self.instruction_register & 0x18)
+                                    && compare_instruction_mask(
+                                        self.instruction_register,
+                                        I8008Ins::CFc as u8,
+                                        I8008Ins::CFc.mask(),
+                                    )
                                 {
                                     self.register_a = self.databus;
                                     self.push_stack();
@@ -855,7 +1139,7 @@ impl I8008 {
                                     self.cycle = CpuCycle::PCI;
                                     t1 = true;
                                 }
-                            },
+                            }
                         }
                     } else {
                         panic!("error: reached unimplemented instruction {:#04X} in cycle PCR state T3", self.instruction_register)
@@ -872,56 +1156,118 @@ impl I8008 {
                     }
                 }
                 CpuStateI::T4 => {
-                    if compare_instruction_mask(self.instruction_register, I8008Ins::JMP as u8, I8008Ins::JMP.mask() ) ||
-                       compare_instruction_mask(self.instruction_register, I8008Ins::JFc as u8, I8008Ins::JFc.mask() ) ||
-                       compare_instruction_mask(self.instruction_register, I8008Ins::JTc as u8, I8008Ins::JTc.mask() ) ||
-                       compare_instruction_mask(self.instruction_register, I8008Ins::CAL as u8, I8008Ins::CAL.mask() ) ||
-                       compare_instruction_mask(self.instruction_register, I8008Ins::CFc as u8, I8008Ins::CFc.mask() ) ||
-                       compare_instruction_mask(self.instruction_register, I8008Ins::CTc as u8, I8008Ins::CTc.mask() )
-                    {
+                    if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::JMP as u8,
+                        I8008Ins::JMP.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::JFc as u8,
+                        I8008Ins::JFc.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::JTc as u8,
+                        I8008Ins::JTc.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::CAL as u8,
+                        I8008Ins::CAL.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::CFc as u8,
+                        I8008Ins::CFc.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::CTc as u8,
+                        I8008Ins::CTc.mask(),
+                    ) {
                         self.set_program_counter((self.register_a as u16) << 8);
                     }
                     self.state_internal = CpuStateI::T5;
                     self.state_external = CpuState::T5;
                 }
                 CpuStateI::T5 => {
-                    if compare_instruction_mask(self.instruction_register, I8008Ins::LrM as u8, I8008Ins::LrM.mask() ) {
-                        let register_selector = self.instruction_register & 0x38; 
-                        self.set_scratchpad_register(self.register_b,
+                    if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LrM as u8,
+                        I8008Ins::LrM.mask(),
+                    ) {
+                        let register_selector = self.instruction_register & 0x38;
+                        self.set_scratchpad_register(
+                            self.register_b,
                             (register_selector & 0x20) >> 5 != 0,
-                            (register_selector & 0x10) >> 4 != 0, 
-                            (register_selector & 0x08) >> 3 != 0
+                            (register_selector & 0x10) >> 4 != 0,
+                            (register_selector & 0x08) >> 3 != 0,
                         );
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOM as u8, I8008Ins::AOM.mask() ) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::AOM as u8,
+                        I8008Ins::AOM.mask(),
+                    ) {
                         let operation_selector: u8 = self.instruction_register & 0x38;
                         self.clear_flags();
 
-                        self.alu(AluOp::try_from(operation_selector).unwrap(), self.register_b); // sets CARRY flag
-                        if operation_selector != 0x38 { // 0x38 == 00111000 == compare sets ZERO flag
+                        self.alu(
+                            AluOp::try_from(operation_selector).unwrap(),
+                            self.register_b,
+                        ); // sets CARRY flag
+                        if operation_selector != 0x38 {
+                            // 0x38 == 00111000 == compare sets ZERO flag
                             self.set_flags(self.register_a); // set rest of the flags
                         }
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LrI as u8, I8008Ins::LrI.mask() ) { 
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LrI as u8,
+                        I8008Ins::LrI.mask(),
+                    ) {
                         // shouldn't get here with LMI
-                        let register_selector = self.instruction_register & 0x38; 
-                        self.set_scratchpad_register(self.register_b,
+                        let register_selector = self.instruction_register & 0x38;
+                        self.set_scratchpad_register(
+                            self.register_b,
                             (register_selector & 0x20) >> 5 != 0,
-                            (register_selector & 0x10) >> 4 != 0, 
-                            (register_selector & 0x08) >> 3 != 0
+                            (register_selector & 0x10) >> 4 != 0,
+                            (register_selector & 0x08) >> 3 != 0,
                         );
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::AOI as u8, I8008Ins::AOI.mask() ) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::AOI as u8,
+                        I8008Ins::AOI.mask(),
+                    ) {
                         let operation_selector: u8 = self.instruction_register & 0x38;
                         self.clear_flags();
-                        self.alu(AluOp::try_from(operation_selector).unwrap(), self.register_b); // sets CARRY flag
-                        if operation_selector != 0x38 { // 0x38 == 00111000 == compare sets ZERO flag
+                        self.alu(
+                            AluOp::try_from(operation_selector).unwrap(),
+                            self.register_b,
+                        ); // sets CARRY flag
+                        if operation_selector != 0x38 {
+                            // 0x38 == 00111000 == compare sets ZERO flag
                             self.set_flags(self.register_a); // set rest of the flags
                         }
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::JMP as u8, I8008Ins::JMP.mask() ) ||
-                       compare_instruction_mask(self.instruction_register, I8008Ins::JFc as u8, I8008Ins::JFc.mask() ) ||
-                       compare_instruction_mask(self.instruction_register, I8008Ins::JTc as u8, I8008Ins::JTc.mask() ) ||
-                       compare_instruction_mask(self.instruction_register, I8008Ins::CAL as u8, I8008Ins::CAL.mask() ) ||
-                       compare_instruction_mask(self.instruction_register, I8008Ins::CFc as u8, I8008Ins::CFc.mask() ) ||
-                       compare_instruction_mask(self.instruction_register, I8008Ins::CTc as u8, I8008Ins::CTc.mask() )
-                    {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::JMP as u8,
+                        I8008Ins::JMP.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::JFc as u8,
+                        I8008Ins::JFc.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::JTc as u8,
+                        I8008Ins::JTc.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::CAL as u8,
+                        I8008Ins::CAL.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::CFc as u8,
+                        I8008Ins::CFc.mask(),
+                    ) || compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::CTc as u8,
+                        I8008Ins::CTc.mask(),
+                    ) {
                         let pc = self.get_program_counter() & 0x3F; // extract higher bits
                         self.set_program_counter(self.register_b as u16 | pc);
                     }
@@ -933,31 +1279,55 @@ impl I8008 {
             },
             CpuCycle::PCW => match self.state_internal {
                 CpuStateI::T1 => {
-                    if compare_instruction_mask(self.instruction_register, I8008Ins::LMr as u8, I8008Ins::LMr.mask() ) {
+                    if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LMr as u8,
+                        I8008Ins::LMr.mask(),
+                    ) {
                         self.databus = self.scratchpad_l.reverse_bits();
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LMI as u8, I8008Ins::LMI.mask() ) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LMI as u8,
+                        I8008Ins::LMI.mask(),
+                    ) {
                         self.databus = self.scratchpad_l.reverse_bits();
                     }
                     self.state_internal = CpuStateI::T2;
                     self.state_external = CpuState::T2;
-                },
+                }
                 CpuStateI::T2 => {
-                    if compare_instruction_mask(self.instruction_register, I8008Ins::LMr as u8, I8008Ins::LMr.mask() ) {
+                    if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LMr as u8,
+                        I8008Ins::LMr.mask(),
+                    ) {
                         self.databus = self.scratchpad_h.reverse_bits();
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LMI as u8, I8008Ins::LMI.mask() ) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LMI as u8,
+                        I8008Ins::LMI.mask(),
+                    ) {
                         self.databus = self.scratchpad_h.reverse_bits();
                     }
                     self.state_internal = CpuStateI::T3;
                     self.state_external = CpuState::T3;
-                },
+                }
                 CpuStateI::T3 => {
                     let mut t1: bool = false;
-                    if compare_instruction_mask(self.instruction_register, I8008Ins::LMr as u8, I8008Ins::LMr.mask() ) {
+                    if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LMr as u8,
+                        I8008Ins::LMr.mask(),
+                    ) {
                         self.databus = self.register_b;
 
                         t1 = true;
                         self.cycle = CpuCycle::PCI;
-                    } else if compare_instruction_mask(self.instruction_register, I8008Ins::LMI as u8, I8008Ins::LMI.mask() ) {
+                    } else if compare_instruction_mask(
+                        self.instruction_register,
+                        I8008Ins::LMI as u8,
+                        I8008Ins::LMI.mask(),
+                    ) {
                         self.databus = self.register_b;
 
                         t1 = true;
@@ -968,9 +1338,9 @@ impl I8008 {
                         self.state_internal = CpuStateI::T1;
                         self.state_external = CpuState::T1;
                     }
-                },
-                CpuStateI::T4 => {},
-                CpuStateI::T5 => {},
+                }
+                CpuStateI::T4 => {}
+                CpuStateI::T5 => {}
             },
             _ => (),
         };
@@ -1001,18 +1371,20 @@ pub fn step_with_mem(
                 );
                 chip.databus = memory.get_value(*address_reg);
                 chip.step();
-            },
+            }
             CpuCycle::PCW => {
-                println!("[DEBUG] read in address {:#06X}, setting new value", u14_to_u16(*address_reg));
+                println!(
+                    "[DEBUG] read in address {:#06X}, setting new value",
+                    u14_to_u16(*address_reg)
+                );
                 chip.step();
                 memory.memory[u14_to_u16(*address_reg) as usize] = chip.databus;
-            },
-            _ => ()
-        }
+            }
+            _ => (),
+        },
         _ => chip.step(),
     }
 }
-
 
 #[inline(always)]
 pub fn u14_to_u16(address: u16) -> u16 {
