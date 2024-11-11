@@ -114,14 +114,12 @@ pub fn parse_command(input: String) -> Result<Command, ParseError> {
         Some("step") => end_of_args_parser(input_words.next(), Command::Step),
         Some("cycle") => end_of_args_parser(input_words.next(), Command::Cycle),
         Some("address") => end_of_args_parser(input_words.next(), Command::Address),
-        Some("set_line") => match parse_line(input_words.next()) {
-            Err(e) => Err(e),
-            Ok(line) => match parse_line_value(input_words.next(), line) {
-                Err(e) => Err(e),
-                Ok((line, value)) => Ok(Command::SetLine(line, value)),
-            }
+        Some("set_line") => {
+            let line: Line = parse_line(input_words.next())?;
+            let (line, value) = parse_line_value(input_words.next(), line)?;
+            Ok(Command::SetLine(line, value))
         }, 
-        Some("quit") => end_of_args_parser(input_words.next(), Command::Quit),
+        Some("quit") | Some("exit") => end_of_args_parser(input_words.next(), Command::Quit),
         Some("help") => end_of_args_parser(input_words.next(), Command::Help),
         Some("") | None  => Ok(Command::Empty),
         Some(c) => Err(ParseError::UnknownCommand(c.to_string())),

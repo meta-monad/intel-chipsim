@@ -1,15 +1,16 @@
 mod i8008;
 mod utils;
 mod commands;
+mod assembler;
 
 use i8008::*;
 use utils::*;
 
 use std::io;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::PathBuf;
-use std::fs::File;
 
+use ansi_term;
 use clap::{Parser, ValueEnum};
 
 #[derive(Clone, ValueEnum)]
@@ -40,7 +41,7 @@ fn run_i8008() {
     mem_controller.load_into(
         0x00,
         &[
-            I8008Ins::Lrr as u8 | 0x00, // Laa - 0xC0  
+            I8008Ins::Lrr as u8 | 0x00, // Laa - 0xC0
             I8008Ins::INr as u8 | 0x08, // INb - 0x08
             I8008Ins::DCr as u8 | 0x18, // DCd - 0x19
             I8008Ins::Lrr as u8 | 0x23, // Led - 0xE3
@@ -50,14 +51,15 @@ fn run_i8008() {
             0xab,
             I8008Ins::LMI as u8, // LMI - 0x3E
             0xbc,
+            // I8008Ins::RST as u8 | 0x10, // RST 0x10
             I8008Ins::AOr as u8 | AluOp::OR as u8 | 0x01, // ORb - 0xB1
             I8008Ins::AOr as u8 | AluOp::SU as u8 | 0x01, // SUBb - 0x91
             I8008Ins::AOM as u8 | AluOp::SU as u8, // SUBM - 0x97
             I8008Ins::AOI as u8 | AluOp::AD as u8, // ADDI - 0x04 
             0x11,
+            I8008Ins::RET as u8,
         ],
     );
-    // 0xC0, 0x08, 0x19, 0xE3, 0xD7
     loop {
         print!("> ");
         let _ = io::stdout().flush();
@@ -71,20 +73,10 @@ fn run_i8008() {
     }
 }
 
-fn run_assembler(assembly_path: PathBuf, _arch: Architecture) {
-
-    let mut f: File = File::open(assembly_path.as_path()).expect("error: unable to open file");
-    let mut contents = String::new();
-    f.read_to_string(&mut contents).expect("error: unable to read file");
-    let instructions_raw: std::str::Lines<'_> = contents.lines();
-}
-
 fn main() {
     let args: Args = Args::parse();
-    match args.assembly_path {
-        Some(path) => run_assembler(path, args.arch), 
-        None => match args.arch {
-            Architecture::I8008 => run_i8008(),
-        }
+    match (args.assembly_path, args.arch) {
+        (Some(path), Architecture::I8008) => assembler::run_i8008_assembler(path, args.output_path.unwrap()), 
+        (None, Architecture::I8008) => run_i8008(),
     }
 }
