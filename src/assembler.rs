@@ -9,6 +9,7 @@ use crate::i8008;
 use crate::i8008::AluOp;
 use crate::i8008::I8008Ins;
 
+// unexp_operand insert a return, this is not possible with an inline function
 macro_rules! unexp_operand {
     ($t:expr) => {{
         match $t {
@@ -48,6 +49,8 @@ enum Instruction {
     Input(u8),
     Output(u8),
     Halt,
+    DefineByte(u8),
+    Space(u8),
     Label(String), // assembler directive
 }
 
@@ -133,10 +136,12 @@ impl std::fmt::Display for ParseError {
     }
 }
 
+#[inline(always)]
 fn move_to_ddd(val: u8) -> u8 {
     val << 3
 }
 
+// dummy trait to attach to Vec<Resolvable>
 trait VecResolve {
     fn push_resolved(&mut self, item: u8);
 }
@@ -203,7 +208,7 @@ fn parse_line(line: String) -> Result<Option<Instruction>, ParseError> {
     let argc: usize = input_words.clone().collect::<Vec<&str>>().len();
 
     // idea: branch arms still largely repeat:
-    //     especially for mov, inc, dec, hlt
+    //     especially for mov, inc, dec, hlt, rst, db, space
     // 1. take [n] operands
     //  1.1. .next() on [iterator]
     //  1.2. unwrap with .ok_or()? to send missing operand error up
@@ -352,6 +357,27 @@ fn parse_line(line: String) -> Result<Option<Instruction>, ParseError> {
             }
 
         }
+        Some("db") => {
+            let fst = input_words.next().ok_or(ParseError::MissingOperand(vec!["0x[..]"]))?.to_string();
+            let fst_op = parse_operand(&fst);
+            
+            unexp_operand!(input_words.next());
+            match fst_op {
+                Some(Operand::RawByte(b)) => Ok(Some(Instruction::DefineByte(b))),
+                _ => Err(ParseError::BadOperand(fst, vec!["0x[..]"]))
+            }
+        }
+        Some("space") => {
+            let fst = input_words.next().ok_or(ParseError::MissingOperand(vec!["0x[..]"]))?.to_string();
+            let fst_op = parse_operand(&fst);
+            
+            unexp_operand!(input_words.next());
+            match fst_op {
+                Some(Operand::RawByte(b)) => Ok(Some(Instruction::Space(b))),
+                _ => Err(ParseError::BadOperand(fst, vec!["0x[..]"]))
+            }
+        }
+        Some("") => Ok(None),
         Some(ins) => Err(ParseError::InvalidInstruction(ins.to_string())),
         None => Ok(None),
     }
@@ -453,6 +479,20 @@ fn instructions_to_hex(instructions: Vec<Instruction>) -> Result<Vec<u8>, ParseE
                     label_hashmap.insert(l, program_pass_one.len() as u16);
                 }
             }
+            // assembler directive - places a key in the lookup table or raises error if the label
+            // is a duplicate
+
+            Instruction::DefineByte(b) => {
+                program_pass_one.push_resolved(b);
+            }
+            // assembler directive - puts a single byte into the program
+
+            Instruction::Space(num) => {
+                for _ in 0..num {
+                    program_pass_one.push_resolved(0x00); // HLT
+                }
+            }
+            // assembler directive - repeats 00 (i.e. a Halt instruction) a given amount of times
 
             _ => panic!("error: unimplemented translation for assembly instruction"),
 
@@ -467,9 +507,13 @@ fn instructions_to_hex(instructions: Vec<Instruction>) -> Result<Vec<u8>, ParseE
             Resolvable::Unresolved(label) => match label.as_str() {
                 "" => (),
                 _ => {
-                    let address: &u16 = label_hashmap.get(&label).unwrap();
-                    program.push((address & 0x00FF) as u8);
-                    program.push(((address & 0xFF00) >> 8) as u8);
+                    match label_hashmap.get(&label) {
+                        Some(address) => {
+                            program.push((address & 0x00FF) as u8);
+                            program.push(((address & 0xFF00) >> 8) as u8);
+                        },
+                        None => return Err(ParseError::UnknownLabel(label)),
+                    }
                 }
             }
         };

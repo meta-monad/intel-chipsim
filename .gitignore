@@ -1,2 +1,6 @@
 /target
 TODO.md
+
+# assembly
+*.s
+*.o
