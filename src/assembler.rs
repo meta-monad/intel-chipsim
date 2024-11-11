@@ -82,10 +82,10 @@ enum Register {
 
 #[derive(Debug)]
 enum Condition {
-    Carry,
-    Zero,
-    Sign,
-    Parity,
+    Carry = 0x00,
+    Zero = 0x08, // XX X01 XXX
+    Sign = 0x10, // XX X10 XXX
+    Parity = 0x18, // XX X11 XXX
 }
 
 enum ParseError {
@@ -202,6 +202,22 @@ fn parse_alu_op(op: &str) -> Option<AluOp> {
     }
 }
 
+fn parse_condition_word(word: &str) -> Option<(Condition, bool)> {
+    // pattern matching on both sets allows the reuse of the function
+    // this is desirable since we only care about the Condition produced
+    match word {
+        "jc" | "cc" => Some((Condition::Carry, true)),
+        "jnc" | "cnc" => Some((Condition::Carry, false)),
+        "jz" | "cz" => Some((Condition::Zero, true)),
+        "jnz" | "cnz" => Some((Condition::Zero, false)),
+        "js" | "cs" => Some((Condition::Sign, true)),
+        "jns" | "cns" => Some((Condition::Sign, false)),
+        "jp" | "cp" => Some((Condition::Parity, true)),
+        "jnp" | "cnp" => Some((Condition::Parity, false)),
+        _ => None,
+    }
+}
+
 fn parse_line(line: String) -> Result<Option<Instruction>, ParseError> {
     let line_t = line.split(';').nth(0).unwrap_or(&line).trim();
     let mut input_words = line_t.split(' ');
@@ -259,7 +275,7 @@ fn parse_line(line: String) -> Result<Option<Instruction>, ParseError> {
                 (Some(Operand::Register(_)), _) | (Some(Operand::Memory), _) => {
                     Err(ParseError::BadOperand(snd, move_operands))
                 }
-                (_, _) => Err(ParseError::BadOperand(fst, move_operands)),
+                (..) => Err(ParseError::BadOperand(fst, move_operands)),
             }
         },
         Some("inc") => {
@@ -299,19 +315,6 @@ fn parse_line(line: String) -> Result<Option<Instruction>, ParseError> {
                 _ => Err(ParseError::BadOperand(fst, alu_operands))
             }
         }
-        Some("jmp") => {
-            let valid_operands = vec!["0x[....]", "label"];
-
-            let fst = input_words.next().ok_or(ParseError::MissingOperand(valid_operands.clone()))?.to_string();
-            let fst_op = parse_operand(&fst);
-
-            unexp_operand!(input_words.next());
-            match fst_op {
-                Some(Operand::RawAddress(a)) => Ok(Some(Instruction::Jump(Address::RawAddress(a)))),
-                Some(Operand::Label(l)) => Ok(Some(Instruction::Jump(Address::Label(l)))),
-                _ => Err(ParseError::BadOperand(fst, valid_operands)),
-            }
-        }
         Some("rlc") => eol_parser(
             input_words.next(),
             Instruction::RotateLeftCarry,
@@ -328,6 +331,68 @@ fn parse_line(line: String) -> Result<Option<Instruction>, ParseError> {
             input_words.next(),
             Instruction::RotateAroundRight,
         ),
+        Some("jmp") => {
+            let valid_operands = vec!["0x[....]", "label"];
+
+            let fst = input_words.next().ok_or(ParseError::MissingOperand(valid_operands.clone()))?.to_string();
+            let fst_op = parse_operand(&fst);
+
+            unexp_operand!(input_words.next());
+            match fst_op {
+                Some(Operand::RawAddress(a)) => Ok(Some(Instruction::Jump(Address::RawAddress(a)))),
+                Some(Operand::Label(l)) => Ok(Some(Instruction::Jump(Address::Label(l)))),
+                _ => Err(ParseError::BadOperand(fst, valid_operands)),
+            }
+        },
+        Some(cond_word @ "jc") | Some(cond_word @ "jz") | Some(cond_word @ "js") | Some(cond_word @ "jp") | 
+        Some(cond_word @ "jnc") | Some(cond_word @ "jnz") | Some(cond_word @ "jns") | Some(cond_word @ "jnp")
+            => {
+            let valid_operands = vec!["0x[....]", "label"];
+
+            let fst = input_words.next().ok_or(ParseError::MissingOperand(valid_operands.clone()))?.to_string();
+            let fst_op = parse_operand(&fst);
+            
+            let (condition, truth) = parse_condition_word(cond_word).unwrap();
+            unexp_operand!(input_words.next());
+            match (fst_op, truth) {
+                (Some(Operand::RawAddress(a)), false) => Ok(Some(Instruction::JumpFalse(condition, Address::RawAddress(a)))),
+                (Some(Operand::RawAddress(a)), true) => Ok(Some(Instruction::JumpTrue(condition, Address::RawAddress(a)))),
+                (Some(Operand::Label(l)), false) => Ok(Some(Instruction::JumpFalse(condition, Address::Label(l)))),
+                (Some(Operand::Label(l)), true) => Ok(Some(Instruction::JumpTrue(condition, Address::Label(l)))),
+                _ => Err(ParseError::BadOperand(fst, valid_operands)),
+            }
+        },
+        Some("call") => {
+            let valid_operands = vec!["0x[....]", "label"];
+
+            let fst = input_words.next().ok_or(ParseError::MissingOperand(valid_operands.clone()))?.to_string();
+            let fst_op = parse_operand(&fst);
+
+            unexp_operand!(input_words.next());
+            match fst_op {
+                Some(Operand::RawAddress(a)) => Ok(Some(Instruction::Call(Address::RawAddress(a)))),
+                Some(Operand::Label(l)) => Ok(Some(Instruction::Call(Address::Label(l)))),
+                _ => Err(ParseError::BadOperand(fst, valid_operands)),
+            }
+        },
+        Some(cond_word @ "cc") | Some(cond_word @ "cz") | Some(cond_word @ "cs") | Some(cond_word @ "cp") | 
+        Some(cond_word @ "cnc") | Some(cond_word @ "cnz") | Some(cond_word @ "cns") | Some(cond_word @ "cnp")
+            => {
+            let valid_operands = vec!["0x[....]", "label"];
+
+            let fst = input_words.next().ok_or(ParseError::MissingOperand(valid_operands.clone()))?.to_string();
+            let fst_op = parse_operand(&fst);
+            
+            let (condition, truth) = parse_condition_word(cond_word).unwrap();
+            unexp_operand!(input_words.next());
+            match (fst_op, truth) {
+                (Some(Operand::RawAddress(a)), false) => Ok(Some(Instruction::CallFalse(condition, Address::RawAddress(a)))),
+                (Some(Operand::RawAddress(a)), true) => Ok(Some(Instruction::CallTrue(condition, Address::RawAddress(a)))),
+                (Some(Operand::Label(l)), false) => Ok(Some(Instruction::CallFalse(condition, Address::Label(l)))),
+                (Some(Operand::Label(l)), true) => Ok(Some(Instruction::CallTrue(condition, Address::Label(l)))),
+                _ => Err(ParseError::BadOperand(fst, valid_operands)),
+            }
+        },
         Some("ret") => eol_parser(
             input_words.next(),
             Instruction::Return,
@@ -466,6 +531,77 @@ fn instructions_to_hex(instructions: Vec<Instruction>) -> Result<Vec<u8>, ParseE
             // 01 XXX 100
             // BB BBB BBB
             // BB BBB BBB
+
+            Instruction::JumpFalse(condition, Address::RawAddress(a)) => {
+                program_pass_one.push_resolved(I8008Ins::JFc as u8 | condition as u8);
+                program_pass_one.push_resolved((a & 0x00FF) as u8);
+                program_pass_one.push_resolved(((a & 0xFF00) >> 8) as u8);
+            }
+            Instruction::JumpFalse(condition, Address::Label(l)) => {
+                program_pass_one.push_resolved(I8008Ins::JFc as u8 | condition as u8);
+                program_pass_one.push(Resolvable::Unresolved(l));
+                program_pass_one.push(Resolvable::Unresolved(String::new()));
+            }
+            // 01 0CC 000
+            // BB BBB BBB
+            // BB BBB BBB
+
+            Instruction::JumpTrue(condition, Address::RawAddress(a)) => {
+                program_pass_one.push_resolved(I8008Ins::JTc as u8 | condition as u8);
+                program_pass_one.push_resolved((a & 0x00FF) as u8);
+                program_pass_one.push_resolved(((a & 0xFF00) >> 8) as u8);
+            }
+            Instruction::JumpTrue(condition, Address::Label(l)) => {
+                program_pass_one.push_resolved(I8008Ins::JTc as u8 | condition as u8);
+                program_pass_one.push(Resolvable::Unresolved(l));
+                program_pass_one.push(Resolvable::Unresolved(String::new()));
+            }
+            // 01 1CC 000
+            // BB BBB BBB
+            // BB BBB BBB
+
+            Instruction::Call(Address::RawAddress(a)) => {
+                program_pass_one.push_resolved(I8008Ins::CAL as u8);
+                program_pass_one.push_resolved((a & 0x00FF) as u8);
+                program_pass_one.push_resolved(((a & 0xFF00) >> 8) as u8);
+            },
+            Instruction::Call(Address::Label(l)) => {
+                program_pass_one.push_resolved(I8008Ins::CAL as u8);
+                program_pass_one.push(Resolvable::Unresolved(l));
+                program_pass_one.push(Resolvable::Unresolved(String::new()));
+            }
+            // 01 XXX 110
+            // BB BBB BBB
+            // BB BBB BBB
+
+            Instruction::CallFalse(condition, Address::RawAddress(a)) => {
+                program_pass_one.push_resolved(I8008Ins::CFc as u8 | condition as u8);
+                program_pass_one.push_resolved((a & 0x00FF) as u8);
+                program_pass_one.push_resolved(((a & 0xFF00) >> 8) as u8);
+            }
+            Instruction::CallFalse(condition, Address::Label(l)) => {
+                program_pass_one.push_resolved(I8008Ins::CFc as u8 | condition as u8);
+                program_pass_one.push(Resolvable::Unresolved(l));
+                program_pass_one.push(Resolvable::Unresolved(String::new()));
+            }
+            // 01 0CC 010
+            // BB BBB BBB
+            // BB BBB BBB
+
+            Instruction::CallTrue(condition, Address::RawAddress(a)) => {
+                program_pass_one.push_resolved(I8008Ins::CTc as u8 | condition as u8);
+                program_pass_one.push_resolved((a & 0x00FF) as u8);
+                program_pass_one.push_resolved(((a & 0xFF00) >> 8) as u8);
+            }
+            Instruction::CallTrue(condition, Address::Label(l)) => {
+                program_pass_one.push_resolved(I8008Ins::CTc as u8 | condition as u8);
+                program_pass_one.push(Resolvable::Unresolved(l));
+                program_pass_one.push(Resolvable::Unresolved(String::new()));
+            }
+            // 01 1CC 010
+            // BB BBB BBB
+            // BB BBB BBB
+
 
             Instruction::Halt => program_pass_one.push_resolved(0x00),
             // 00 000 00X
