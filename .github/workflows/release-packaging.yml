@@ -1,0 +1,27 @@
+name: Release Packaging
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    name: Release Packaging
+    env:
+      intel-chipsim: rust_ci_github_actions_workflow
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Release Build
+        run: cargo build --release
+      - name: 'Upload Artifact'
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.intel-chipsim }}
+          path: target/release/${{ env.intel-chipsim }}
