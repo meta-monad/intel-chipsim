@@ -91,33 +91,34 @@ pub enum AluOp {
 impl I8008Ins {
     fn mask(&self) -> u8 {
         match self {
-            // TODO: group instructions and display bit patterns
-
             // I8008Ins::HLT => 0xFF,
-            I8008Ins::LrM => 0xC7,
-            I8008Ins::LMr => 0xF8,
-            I8008Ins::Lrr => 0xC0,
-            I8008Ins::LrI => 0xC7,
-            I8008Ins::LMI => 0xFF,
-            I8008Ins::INr => 0xC7,
-            I8008Ins::DCr => 0xC7,
-            I8008Ins::AOM => 0xC7,
-            I8008Ins::AOr => 0xC0,
-            I8008Ins::AOI => 0xC7,
-            I8008Ins::RLC => 0xFF,
-            I8008Ins::RRC => 0xFF,
-            I8008Ins::RAL => 0xFF,
-            I8008Ins::RAR => 0xFF,
-            I8008Ins::JMP => 0xC7,
-            I8008Ins::JFc => 0xE7,
-            I8008Ins::JTc => 0xE7,
-            I8008Ins::CAL => 0xC7,
-            I8008Ins::CFc => 0xE7,
-            I8008Ins::CTc => 0xE7,
-            I8008Ins::RET => 0xC7,
-            I8008Ins::RFc => 0xE3,
-            I8008Ins::RTc => 0xE3,
-            I8008Ins::RST => 0xC7,
+            I8008Ins::LrM => 0xC7, // 11000111
+            I8008Ins::LMr => 0xF8, // 11111000
+            I8008Ins::Lrr => 0xC0, // 11000000
+            I8008Ins::LrI => 0xC7, // 11000111
+            I8008Ins::LMI => 0xFF, // 11111111
+            I8008Ins::INr => 0xC7, // 11000111
+            I8008Ins::DCr => 0xC7, // 11000111
+
+            I8008Ins::AOM => 0xC7, // 11000111
+            I8008Ins::AOr => 0xC0, // 11000000
+            I8008Ins::AOI => 0xC7, // 11000111
+            I8008Ins::RLC => 0xFF, // 11111111
+            I8008Ins::RRC => 0xFF, // 11111111
+            I8008Ins::RAL => 0xFF, // 11111111
+            I8008Ins::RAR => 0xFF, // 11111111
+
+            I8008Ins::JMP => 0xC7, // 11000111
+            I8008Ins::JFc => 0xE7, // 11100111 
+            I8008Ins::JTc => 0xE7, // 11100111 
+            I8008Ins::CAL => 0xC7, // 11000111
+            I8008Ins::CFc => 0xE7, // 11100111 
+            I8008Ins::CTc => 0xE7, // 11100111 
+            I8008Ins::RET => 0xC7, // 11000111
+            I8008Ins::RFc => 0xE7, // 11100111 
+            I8008Ins::RTc => 0xE7, // 11100111 
+                                   //
+            I8008Ins::RST => 0xC7, // 11000111
         }
     }
 }
@@ -281,7 +282,7 @@ impl I8008 {
         Self {
             state_external: CpuState::STOPPED,
             line_interrupt: false,
-            line_ready: false,
+            line_ready: true, // always ready
             databus: 0,
             state_internal: CpuStateI::T3,
             cycle: CpuCycle::PCI,
@@ -828,32 +829,52 @@ impl I8008 {
                                 self.read_control_bit = true;
                             },
                             true => {
-                                // TODO: clean up
-                                if self.check_condition(self.instruction_register & 0x18) &&
-                                   compare_instruction_mask(self.instruction_register, I8008Ins::JTc as u8, I8008Ins::JTc.mask() )
-                                {
-                                    self.register_a = self.databus;
-                                    t4 = true;
-                                } else if !self.check_condition(self.instruction_register & 0x18) &&
-                                   compare_instruction_mask(self.instruction_register, I8008Ins::JFc as u8, I8008Ins::JFc.mask() )
-                                {
-                                    self.register_a = self.databus;
-                                    t4 = true;
-                                } else if self.check_condition(self.instruction_register & 0x18) &&
-                                   compare_instruction_mask(self.instruction_register, I8008Ins::CTc as u8, I8008Ins::CTc.mask() )
-                                {
-                                    self.register_a = self.databus;
-                                    self.push_stack();
-                                    t4 = true;
-                                } else if !self.check_condition(self.instruction_register & 0x18) &&
-                                   compare_instruction_mask(self.instruction_register, I8008Ins::CFc as u8, I8008Ins::CFc.mask() )
-                                {
-                                    self.register_a = self.databus;
-                                    self.push_stack();
-                                    t4 = true;
+                                // finished reading in address
+                                self.read_control_bit = false;
+                                let condition_met: bool = self.check_condition(self.instruction_register & 0x18); // select bit pattern 00011000
+
+                                // based on condition's status, check if the corresponding
+                                // instruction matches or not
+                                if condition_met {
+                                    if compare_instruction_mask(
+                                        self.instruction_register,
+                                        I8008Ins::JTc as u8,
+                                        I8008Ins::JTc.mask(),
+                                    ) {
+                                        self.register_a = self.databus;
+                                        t4 = true;
+                                    } else if compare_instruction_mask(
+                                        self.instruction_register,
+                                        I8008Ins::CTc as u8,
+                                        I8008Ins::CTc.mask(),
+                                    ) {
+                                        self.register_a = self.databus;
+                                        self.push_stack();
+                                        t4 = true;
+                                    } else {
+                                        self.cycle = CpuCycle::PCI;
+                                        t1 = true;
+                                    }
                                 } else {
-                                    self.cycle = CpuCycle::PCI;
-                                    t1 = true;
+                                    if compare_instruction_mask(
+                                        self.instruction_register,
+                                        I8008Ins::JFc as u8,
+                                        I8008Ins::JFc.mask(),
+                                    ) {
+                                        self.register_a = self.databus;
+                                        t4 = true;
+                                    } else if compare_instruction_mask(
+                                        self.instruction_register,
+                                        I8008Ins::CFc as u8,
+                                        I8008Ins::CFc.mask(),
+                                    ) {
+                                        self.register_a = self.databus;
+                                        self.push_stack();
+                                        t4 = true;
+                                    } else {
+                                        self.cycle = CpuCycle::PCI;
+                                        t1 = true;
+                                    }
                                 }
                             },
                         }
@@ -1016,24 +1037,8 @@ pub fn step_with_mem(
 
 #[inline(always)]
 pub fn u14_to_u16(address: u16) -> u16 {
-    // TODO: replace to use a bitmask and .reverse_bits()
-    // second byte
-    ((address & 0x2000) >> 3) +  // D5
-    ((address & 0x1000) >> 1) +  // D4
-    ((address & 0x0800) << 1) +  // D3
-    ((address & 0x0400) << 3) +  // D2
-    ((address & 0x0200) << 5) +  // D1
-    ((address & 0x0100) << 7) +  // D0
-
-    // first byte
-    ((address & 0x0080) >> 7) +  // X
-    ((address & 0x0040) >> 5) +  // X
-    ((address & 0x0020) >> 3) +  // D5
-    ((address & 0x0010) >> 1) +  // D4
-    ((address & 0x0008) << 1) +  // D3
-    ((address & 0x0004) << 3) + // D2
-    ((address & 0x0002) << 5) + // D1
-    ((address & 0x0001) << 7) // D0
+    ((address & 0x00FF) as u8).reverse_bits() as u16 + // first byte
+    (((((address & 0x3F00) >> 8) as u8).reverse_bits() as u16) << 8) // second byte
 }
 
 #[inline(always)]

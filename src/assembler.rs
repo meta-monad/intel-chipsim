@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use ansi_term::{Color, Style};
 use std::collections::HashMap;
 
-use crate::i8008; 
 use crate::i8008::AluOp;
 use crate::i8008::I8008Ins;
 
@@ -82,7 +81,7 @@ enum Register {
 
 #[derive(Debug)]
 enum Condition {
-    Carry = 0x00,
+    Carry = 0x00, // XX X00 XXX
     Zero = 0x08, // XX X01 XXX
     Sign = 0x10, // XX X10 XXX
     Parity = 0x18, // XX X11 XXX
@@ -206,14 +205,14 @@ fn parse_condition_word(word: &str) -> Option<(Condition, bool)> {
     // pattern matching on both sets allows the reuse of the function
     // this is desirable since we only care about the Condition produced
     match word {
-        "jc" | "cc" => Some((Condition::Carry, true)),
-        "jnc" | "cnc" => Some((Condition::Carry, false)),
-        "jz" | "cz" => Some((Condition::Zero, true)),
-        "jnz" | "cnz" => Some((Condition::Zero, false)),
-        "js" | "cs" => Some((Condition::Sign, true)),
-        "jns" | "cns" => Some((Condition::Sign, false)),
-        "jp" | "cp" => Some((Condition::Parity, true)),
-        "jnp" | "cnp" => Some((Condition::Parity, false)),
+        "jc" | "cc" | "rc"=> Some((Condition::Carry, true)),
+        "jnc" | "cnc" | "rnc"=> Some((Condition::Carry, false)),
+        "jz" | "cz" | "rz"=> Some((Condition::Zero, true)),
+        "jnz" | "cnz" | "rnz" => Some((Condition::Zero, false)),
+        "js" | "cs" | "rs" => Some((Condition::Sign, true)),
+        "jns" | "cns" | "rns" => Some((Condition::Sign, false)),
+        "jp" | "cp" | "rp" => Some((Condition::Parity, true)),
+        "jnp" | "cnp" | "rnp" => Some((Condition::Parity, false)),
         _ => None,
     }
 }
@@ -221,7 +220,7 @@ fn parse_condition_word(word: &str) -> Option<(Condition, bool)> {
 fn parse_line(line: String) -> Result<Option<Instruction>, ParseError> {
     let line_t = line.split(';').nth(0).unwrap_or(&line).trim();
     let mut input_words = line_t.split(' ');
-    let argc: usize = input_words.clone().collect::<Vec<&str>>().len();
+    // let argc: usize = input_words.clone().collect::<Vec<&str>>().len();
 
     // idea: branch arms still largely repeat:
     //     especially for mov, inc, dec, hlt, rst, db, space
@@ -345,8 +344,7 @@ fn parse_line(line: String) -> Result<Option<Instruction>, ParseError> {
             }
         },
         Some(cond_word @ "jc") | Some(cond_word @ "jz") | Some(cond_word @ "js") | Some(cond_word @ "jp") | 
-        Some(cond_word @ "jnc") | Some(cond_word @ "jnz") | Some(cond_word @ "jns") | Some(cond_word @ "jnp")
-            => {
+        Some(cond_word @ "jnc") | Some(cond_word @ "jnz") | Some(cond_word @ "jns") | Some(cond_word @ "jnp") => {
             let valid_operands = vec!["0x[....]", "label"];
 
             let fst = input_words.next().ok_or(ParseError::MissingOperand(valid_operands.clone()))?.to_string();
@@ -376,8 +374,7 @@ fn parse_line(line: String) -> Result<Option<Instruction>, ParseError> {
             }
         },
         Some(cond_word @ "cc") | Some(cond_word @ "cz") | Some(cond_word @ "cs") | Some(cond_word @ "cp") | 
-        Some(cond_word @ "cnc") | Some(cond_word @ "cnz") | Some(cond_word @ "cns") | Some(cond_word @ "cnp")
-            => {
+        Some(cond_word @ "cnc") | Some(cond_word @ "cnz") | Some(cond_word @ "cns") | Some(cond_word @ "cnp") => {
             let valid_operands = vec!["0x[....]", "label"];
 
             let fst = input_words.next().ok_or(ParseError::MissingOperand(valid_operands.clone()))?.to_string();
@@ -397,6 +394,17 @@ fn parse_line(line: String) -> Result<Option<Instruction>, ParseError> {
             input_words.next(),
             Instruction::Return,
         ),
+        Some(cond_word @ "rc") | Some(cond_word @ "rz") | Some(cond_word @ "rs") | Some(cond_word @ "rp") | 
+        Some(cond_word @ "rnc") | Some(cond_word @ "rnz") | Some(cond_word @ "rns") | Some(cond_word @ "rnp") => {
+            
+            let (condition, truth) = parse_condition_word(cond_word).unwrap();
+            unexp_operand!(input_words.next());
+            match truth {
+                true => Ok(Some(Instruction::ReturnFalse(condition))),
+                false => Ok(Some(Instruction::ReturnTrue(condition))),
+            }
+        },
+
         Some("rst") => {
             let fst = input_words.next().ok_or(ParseError::MissingOperand(vec!["0x[..]"]))?.to_string();
             let fst_op = parse_operand(&fst);
@@ -448,7 +456,7 @@ fn parse_line(line: String) -> Result<Option<Instruction>, ParseError> {
     }
 }
 
-fn instructions_to_hex(instructions: Vec<Instruction>) -> Result<Vec<u8>, ParseError> {
+fn instructions_to_hex(instructions: Vec<Instruction>, filename: &str) -> Result<Vec<u8>, ParseError> {
     let mut program_pass_one: Vec<Resolvable> = Vec::new();
     let mut program: Vec<u8> = Vec::new();
     let mut label_hashmap: HashMap<String, u16> = HashMap::new();
@@ -518,7 +526,14 @@ fn instructions_to_hex(instructions: Vec<Instruction>) -> Result<Vec<u8>, ParseE
                 // lower half of the address comes first
                 program_pass_one.push_resolved((a & 0x00FF) as u8);
                 program_pass_one.push_resolved(((a & 0xFF00) >> 8) as u8);
-                // TODO: warning here if highest 2 bits are set
+                if a & 0xC000 != 0x0000 {
+                    println!("{}: {}: two highest bits of address in jump instruction are set, but the intel 8008 can only address 14 bits of memory",
+                        Style::new()
+                            .bold()
+                            .paint(filename),
+                        Color::Yellow.paint("warning"),
+                    );
+                }
             },
             Instruction::Jump(Address::Label(l)) => {
                 program_pass_one.push_resolved(I8008Ins::JMP as u8);
@@ -536,6 +551,15 @@ fn instructions_to_hex(instructions: Vec<Instruction>) -> Result<Vec<u8>, ParseE
                 program_pass_one.push_resolved(I8008Ins::JFc as u8 | condition as u8);
                 program_pass_one.push_resolved((a & 0x00FF) as u8);
                 program_pass_one.push_resolved(((a & 0xFF00) >> 8) as u8);
+
+                if a & 0xC000 != 0x0000 {
+                    println!("{}: {}: two highest bits of address in jump instruction are set, but the intel 8008 can only address 14 bits of memory",
+                        Style::new()
+                            .bold()
+                            .paint(filename),
+                        Color::Yellow.paint("warning"),
+                    );
+                }
             }
             Instruction::JumpFalse(condition, Address::Label(l)) => {
                 program_pass_one.push_resolved(I8008Ins::JFc as u8 | condition as u8);
@@ -550,6 +574,15 @@ fn instructions_to_hex(instructions: Vec<Instruction>) -> Result<Vec<u8>, ParseE
                 program_pass_one.push_resolved(I8008Ins::JTc as u8 | condition as u8);
                 program_pass_one.push_resolved((a & 0x00FF) as u8);
                 program_pass_one.push_resolved(((a & 0xFF00) >> 8) as u8);
+
+                if a & 0xC000 != 0x0000 {
+                    println!("{}: {}: two highest bits of address in jump instruction are set, but the intel 8008 can only address 14 bits of memory",
+                        Style::new()
+                            .bold()
+                            .paint(filename),
+                        Color::Yellow.paint("warning"),
+                    );
+                }
             }
             Instruction::JumpTrue(condition, Address::Label(l)) => {
                 program_pass_one.push_resolved(I8008Ins::JTc as u8 | condition as u8);
@@ -602,6 +635,24 @@ fn instructions_to_hex(instructions: Vec<Instruction>) -> Result<Vec<u8>, ParseE
             // BB BBB BBB
             // BB BBB BBB
 
+            Instruction::Return => {
+                program_pass_one.push_resolved(I8008Ins::RET as u8);
+            }
+            // 00 XXX 111 == 00 000 111
+
+            Instruction::ReturnFalse(condition) => {
+                program_pass_one.push_resolved(I8008Ins::RFc as u8 | condition as u8);
+            }
+            // 00 0CC 011
+
+            Instruction::ReturnTrue(condition) => {
+                program_pass_one.push_resolved(I8008Ins::RTc as u8 | condition as u8);
+            }
+            // 00 1CC 011
+
+            Instruction::Restart(a) => {
+                program_pass_one.push_resolved(I8008Ins::RST as u8 | a);
+            }
 
             Instruction::Halt => program_pass_one.push_resolved(0x00),
             // 00 000 00X
@@ -678,12 +729,13 @@ pub fn run_i8008_assembler(assembly_path: PathBuf, output_path: PathBuf) {
     if errors.is_empty() {
         // successful parse
         let mut fo: File = File::create(output_path.clone()).expect("error: unable to create output");
-        match instructions_to_hex(instructions_parse) {
+        let filename: &str = assembly_path.file_name().unwrap().to_str().unwrap();
+        match instructions_to_hex(instructions_parse, filename ) {
             Err(error) => println!(
                 "{}: {}: {}",
                 Style::new()
                     .bold()
-                    .paint(assembly_path.file_name().unwrap().to_str().unwrap()),
+                    .paint(filename),
                 Color::Red.paint("error"),
                 error, 
                 ),

@@ -276,7 +276,7 @@ pub fn run_command(command: Command, cpu_sim: &mut I8008, mem_controller: &mut M
             if bytecode.len() > mem_controller.memory.len() {
                 println!("error: failed loading into memory, file too large");
             } else {
-                mem_controller.load_into(0, &bytecode);
+                mem_controller.load_into(bytecode);
             }
             
         }

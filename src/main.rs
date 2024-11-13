@@ -10,7 +10,6 @@ use std::io;
 use std::io::Write;
 use std::path::PathBuf;
 
-use ansi_term;
 use clap::{Parser, ValueEnum};
 
 #[derive(Clone, ValueEnum)]
