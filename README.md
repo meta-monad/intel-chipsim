@@ -1,6 +1,6 @@
 # Intel Chipsim
 
-The goal of this project is to to simulate legacy Intel CPUs. The current focus is the intel 8008, but in the future it may expand to include the 8080 and 8086. Some information regarding the intel 8008's operation can be found under [i8008.md](i8008.md).
+The goal of this project is to to simulate legacy Intel CPUs. The current focus is the intel 8008, but in the future it may expand to include the 8080 and 8086.
 
 ## Usage
 
@@ -33,9 +33,13 @@ The aim of this endeveaour was a truthful implementation of the Intel 8008 micro
 
 It's important to point out that when the chip will signal that it has entered a particular state, it means that it's ready to decode that state by the next call of the `step` function. This is due to architectural reasons rather than historical ones as the `step` function works in the following manner:
 1. decode cycle and state
-2. processing
-3. set new state (there is a choice)
+2. update the chip by changing registers, preforming an ALU operation, writing/reading from the databus, etc
+3. set a new state & cycle (there is a choice)
 
-Other files include the assembler located in `assembler.rs`, which is a primitive 2-pass assembler that provides errors and warnings as well as a few assembler directives. As well as `commands.rs`, which decodes and potentially executes commands supplied in the interactive shell. Conceptually, the two files are very similar with data structures for a well-formed term for their context (an instruction/a command), errors, and function `parse :: [Tokens] -> Either Term Error` and `runTerm :: Term -> ()`.
+Other files include the assembler located in `assembler.rs`, which is a primitive 2-pass assembler that provides errors and warnings as well as a few assembler directives. The other file, `commands.rs`, decodes and potentially executes commands supplied in the interactive shell. Conceptually, the two files are very similar with data structures for a well-formed term (for their respective contexts, an instruction/a command), enums for errors, and functions following the pattern `parse :: [Tokens] -> Either Term Error` and `runTerm :: Term -> ()`.
 
-The other two files - `main.rs` and `utils.rs` - are mostly just wrapper functions.
+The other two files - `main.rs` and `utils.rs` - are mostly just wrapper functions. Though it's worth noting that the latter contains code for the struct wrapping the memory.
+
+## Implementation details
+
+Check [i8008.md](i8008.md) for more information regarding the intel 8008's operation can as well as details on the implementation.
