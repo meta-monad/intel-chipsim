@@ -29,9 +29,12 @@ jobs:
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v4
         with:
-          name: intel-chipsim
+          name: intel-chipsim-${{ runner.os }}-exe
           path: target/release/intel-chipsim
+          compression-level: 0
       - name: 'Add to release'
         uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           files: target/release/intel-chipsim
