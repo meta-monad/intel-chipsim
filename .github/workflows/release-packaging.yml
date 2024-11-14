@@ -36,6 +36,4 @@ jobs:
       - name: 'Add to release'
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            target/release/intel-chipsim
-            target/release/intel-chipsim.exe
+          files: target/release/intel-chipsim
