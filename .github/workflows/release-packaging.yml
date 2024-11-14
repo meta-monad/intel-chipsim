@@ -29,7 +29,7 @@ jobs:
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.intel-chipsim }}
+          name: intel-chipsim
           path: target/release/intel-chipsim
       - name: 'Add to release'
         uses: softprops/action-gh-release@v2
